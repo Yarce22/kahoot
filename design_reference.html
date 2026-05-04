@@ -1,0 +1,1949 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QuizPlay — App de Quiz Multijugador</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<style>
+  :root {
+    --bg-deep: #0e0b24;
+    --bg-card: #1a1640;
+    --bg-elevated: #221e55;
+    --accent-yellow: #f5c842;
+    --accent-coral: #f4634a;
+    --accent-cyan: #3dcfcf;
+    --accent-green: #46d98a;
+    --accent-purple: #9b72f5;
+    --text-primary: #ffffff;
+    --text-secondary: rgba(255,255,255,0.65);
+    --text-muted: rgba(255,255,255,0.35);
+    --border: rgba(255,255,255,0.1);
+    --radius-lg: 20px;
+    --radius-xl: 28px;
+    --radius-full: 999px;
+    --shadow-glow-yellow: 0 0 24px rgba(245, 200, 66, 0.45);
+    --shadow-glow-cyan: 0 0 24px rgba(61, 207, 207, 0.45);
+    --shadow-glow-green: 0 0 24px rgba(70, 217, 138, 0.45);
+    --shadow-glow-coral: 0 0 24px rgba(244, 99, 74, 0.45);
+    --shadow-card: 0 8px 32px rgba(0,0,0,0.4);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body, #root {
+    width: 100%; height: 100%; min-height: 100vh;
+    background: var(--bg-deep);
+    color: var(--text-primary);
+    font-family: 'Inter', sans-serif;
+    overflow-x: hidden;
+  }
+  .nunito { font-family: 'Nunito', sans-serif; }
+
+  /* === GLOBAL ANIMATIONS === */
+  @keyframes fadeSlideUp {
+    from { opacity: 0; transform: translateY(28px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; } to { opacity: 1; }
+  }
+  @keyframes popIn {
+    0% { opacity: 0; transform: scale(0.6); }
+    70% { transform: scale(1.08); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+  @keyframes bounceIn {
+    0% { opacity: 0; transform: translateY(-20px) scale(0.85); }
+    60% { transform: translateY(4px) scale(1.04); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes shimmer {
+    0% { background-position: -200% center; }
+    100% { background-position: 200% center; }
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.7; transform: scale(0.97); }
+  }
+  @keyframes timerPulse {
+    0%, 100% { transform: scaleX(1); }
+    50% { transform: scaleX(1.01); }
+  }
+  @keyframes shakeX {
+    0%, 100% { transform: translateX(0); }
+    15% { transform: translateX(-8px); }
+    45% { transform: translateX(8px); }
+    75% { transform: translateX(-4px); }
+  }
+  @keyframes countUp {
+    from { transform: translateY(12px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes confettiFall {
+    0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }
+    100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+  }
+  @keyframes starburstGlow {
+    0%, 100% { box-shadow: 0 0 20px 4px rgba(245,200,66,0.5); }
+    50% { box-shadow: 0 0 40px 10px rgba(245,200,66,0.8); }
+  }
+  @keyframes gradientShift {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+  @keyframes staggerIn {
+    from { opacity: 0; transform: translateX(-30px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes trophyBounce {
+    0% { transform: scale(0) rotate(-10deg); }
+    60% { transform: scale(1.2) rotate(5deg); }
+    100% { transform: scale(1) rotate(0deg); }
+  }
+  @keyframes floatDot {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-10px); }
+  }
+  @keyframes pinGlow {
+    0%, 100% { text-shadow: 0 0 20px rgba(245,200,66,0.6), 0 0 40px rgba(245,200,66,0.3); }
+    50% { text-shadow: 0 0 40px rgba(245,200,66,0.9), 0 0 80px rgba(245,200,66,0.5); }
+  }
+
+  /* === LAYOUT === */
+  .app-shell {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+  .view-transition-enter { animation: fadeSlideUp 0.35s ease both; }
+
+  /* === NAV BAR === */
+  .top-nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 24px;
+    background: rgba(14,11,36,0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+  .top-nav .logo {
+    font-family: 'Nunito', sans-serif;
+    font-weight: 900; font-size: 22px;
+    background: linear-gradient(135deg, var(--accent-yellow), var(--accent-coral));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .nav-tabs {
+    display: flex; gap: 6px;
+    background: var(--bg-card);
+    border-radius: var(--radius-full);
+    padding: 4px;
+  }
+  .nav-tab {
+    padding: 7px 18px;
+    border-radius: var(--radius-full);
+    border: none; cursor: pointer;
+    font-family: 'Nunito', sans-serif;
+    font-weight: 700; font-size: 13px;
+    transition: all 0.2s;
+    background: transparent; color: var(--text-secondary);
+  }
+  .nav-tab.active {
+    background: var(--accent-purple);
+    color: white;
+    box-shadow: 0 2px 12px rgba(155,114,245,0.4);
+  }
+  .nav-tab:hover:not(.active) { background: var(--bg-elevated); color: white; }
+
+  /* === SCROLLABLE VIEW WRAPPER === */
+  .view-wrapper {
+    padding-top: 68px;
+    min-height: 100vh;
+  }
+
+  /* === BG DECORATION === */
+  .bg-dots {
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image: radial-gradient(circle, rgba(155,114,245,0.12) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+  .bg-gradient {
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background: radial-gradient(ellipse at 20% 20%, rgba(155,114,245,0.15) 0%, transparent 60%),
+                radial-gradient(ellipse at 80% 80%, rgba(61,207,207,0.1) 0%, transparent 60%);
+  }
+
+  /* === BUTTONS === */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    border: none; cursor: pointer;
+    font-family: 'Nunito', sans-serif; font-weight: 800;
+    border-radius: var(--radius-full);
+    transition: all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+    position: relative; overflow: hidden;
+  }
+  .btn:active { transform: scale(0.94) !important; }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent-purple), #7c50e8);
+    color: white; padding: 16px 40px; font-size: 18px;
+    box-shadow: 0 4px 20px rgba(155,114,245,0.4);
+  }
+  .btn-primary:hover { transform: scale(1.04) translateY(-2px); box-shadow: 0 8px 28px rgba(155,114,245,0.55); }
+  .btn-yellow {
+    background: linear-gradient(135deg, var(--accent-yellow), #e8b800);
+    color: #1a1035; padding: 16px 40px; font-size: 18px;
+    box-shadow: var(--shadow-glow-yellow);
+  }
+  .btn-yellow:hover { transform: scale(1.04) translateY(-2px); }
+  .btn-green {
+    background: linear-gradient(135deg, var(--accent-green), #2bc47a);
+    color: #0e1a12; padding: 16px 40px; font-size: 18px;
+    box-shadow: var(--shadow-glow-green);
+  }
+  .btn-green:hover { transform: scale(1.04) translateY(-2px); }
+  .btn-coral {
+    background: linear-gradient(135deg, var(--accent-coral), #e84a2f);
+    color: white; padding: 14px 32px; font-size: 16px;
+  }
+  .btn-sm { padding: 9px 20px; font-size: 14px; }
+  .btn-outline {
+    background: transparent;
+    border: 2px solid var(--border);
+    color: var(--text-secondary); padding: 12px 28px; font-size: 15px;
+  }
+  .btn-outline:hover { border-color: var(--accent-purple); color: white; }
+  .btn-ghost { background: transparent; color: var(--text-secondary); padding: 10px 16px; font-size: 14px; }
+  .btn-ghost:hover { color: white; background: var(--bg-elevated); }
+  .btn-disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+
+  /* === INPUTS === */
+  .input-field {
+    width: 100%; background: var(--bg-elevated);
+    border: 2px solid var(--border);
+    border-radius: var(--radius-lg); color: white;
+    font-family: 'Nunito', sans-serif; font-weight: 700;
+    font-size: 24px; text-align: center;
+    padding: 18px 24px; outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    letter-spacing: 4px;
+  }
+  .input-field::placeholder { color: var(--text-muted); letter-spacing: 2px; font-size: 18px; }
+  .input-field:focus { border-color: var(--accent-purple); box-shadow: 0 0 0 4px rgba(155,114,245,0.2); }
+  .input-field.input-normal { font-size: 18px; letter-spacing: 0; text-align: left; }
+
+  /* === CARDS === */
+  .card {
+    background: var(--bg-card);
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-card);
+  }
+
+  /* === BADGE === */
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 12px; border-radius: var(--radius-full);
+    font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 12px;
+  }
+  .badge-blue { background: rgba(61,207,255,0.18); color: var(--accent-cyan); border: 1px solid rgba(61,207,255,0.25); }
+  .badge-green { background: rgba(70,217,138,0.18); color: var(--accent-green); border: 1px solid rgba(70,217,138,0.25); }
+  .badge-orange { background: rgba(245,180,66,0.18); color: var(--accent-yellow); border: 1px solid rgba(245,180,66,0.25); }
+
+  /* ============================
+     VIEW 1: HOME (Player Join)
+  ============================ */
+  .home-view {
+    min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 32px 24px;
+    position: relative; z-index: 1;
+  }
+  .home-logo-big {
+    font-family: 'Nunito', sans-serif; font-weight: 900; font-size: clamp(42px, 10vw, 72px);
+    background: linear-gradient(135deg, var(--accent-yellow) 0%, var(--accent-coral) 50%, var(--accent-purple) 100%);
+    background-size: 200% auto;
+    animation: gradientShift 4s ease infinite;
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    margin-bottom: 8px;
+  }
+  .home-tagline { color: var(--text-secondary); font-size: 16px; margin-bottom: 48px; text-align: center; }
+  .home-card {
+    width: 100%; max-width: 440px;
+    padding: 40px 36px;
+    animation: fadeSlideUp 0.5s ease both;
+  }
+  .home-card .field-label {
+    font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 13px;
+    color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px;
+    margin-bottom: 10px; display: block;
+  }
+  .home-card .field-group { margin-bottom: 20px; }
+  .floating-shapes {
+    position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden;
+  }
+  .shape {
+    position: absolute; border-radius: 50%; opacity: 0.06;
+    background: linear-gradient(135deg, var(--accent-purple), var(--accent-cyan));
+  }
+
+  /* ============================
+     VIEW 2: LOBBY
+  ============================ */
+  .lobby-view {
+    min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 20px; gap: 24px; position: relative; z-index: 1;
+  }
+  .pin-display {
+    text-align: center; padding: 28px 40px;
+  }
+  .pin-label {
+    font-family: 'Nunito', sans-serif; font-weight: 700;
+    font-size: 13px; text-transform: uppercase; letter-spacing: 2px;
+    color: var(--text-secondary); margin-bottom: 8px;
+  }
+  .pin-number {
+    font-family: 'Nunito', sans-serif; font-weight: 900;
+    font-size: clamp(48px, 12vw, 80px);
+    color: var(--accent-yellow);
+    animation: pinGlow 2.5s ease-in-out infinite;
+    letter-spacing: 8px;
+  }
+  .waiting-msg {
+    display: flex; align-items: center; gap: 10px;
+    animation: pulse 2s ease-in-out infinite;
+    font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 16px;
+    color: var(--text-secondary);
+  }
+  .waiting-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent-cyan);
+    animation: pulse 1s ease-in-out infinite;
+  }
+  .player-list {
+    display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
+    width: 100%; max-width: 600px;
+  }
+  .player-chip {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    padding: 8px 18px;
+    font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 14px;
+    animation: bounceIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    transition: all 0.2s;
+  }
+  .player-chip.is-me {
+    background: linear-gradient(135deg, rgba(155,114,245,0.3), rgba(61,207,207,0.2));
+    border-color: var(--accent-purple);
+    color: var(--accent-cyan);
+    box-shadow: 0 0 14px rgba(155,114,245,0.3);
+  }
+  .player-count {
+    font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 14px;
+    color: var(--text-secondary); text-align: center;
+  }
+
+  /* ============================
+     VIEW 3: GAME
+  ============================ */
+  .game-view {
+    min-height: 100vh;
+    display: flex; flex-direction: column;
+    position: relative; z-index: 1;
+  }
+  .timer-bar-container {
+    height: 10px; background: var(--bg-elevated); width: 100%;
+    position: relative; overflow: hidden;
+  }
+  .timer-bar-fill {
+    height: 100%; transition: width 0.5s linear, background-color 0.5s;
+    border-radius: 0 4px 4px 0;
+  }
+  .timer-bar-fill.urgent {
+    animation: timerPulse 0.5s ease-in-out infinite;
+  }
+  .question-area {
+    flex: 1;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 28px 24px; gap: 20px; text-align: center;
+  }
+  .question-number {
+    font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 12px;
+    text-transform: uppercase; letter-spacing: 2px; color: var(--text-secondary);
+  }
+  .question-text {
+    font-family: 'Nunito', sans-serif; font-weight: 800;
+    font-size: clamp(22px, 5vw, 34px);
+    line-height: 1.25; max-width: 700px;
+    animation: fadeSlideUp 0.4s ease both;
+  }
+  .timer-countdown {
+    font-family: 'Nunito', sans-serif; font-weight: 900; font-size: 32px;
+    color: var(--accent-yellow);
+    min-width: 60px; text-align: center;
+  }
+  .timer-countdown.urgent { color: var(--accent-coral); animation: pulse 0.5s ease infinite; }
+
+  /* ANSWER GRID */
+  .answer-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 12px; padding: 16px 20px 28px;
+  }
+  .answer-btn {
+    border: none; cursor: pointer; border-radius: var(--radius-lg);
+    padding: 20px 16px; min-height: 80px;
+    display: flex; align-items: center; gap: 12px;
+    font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 16px;
+    color: white; transition: all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+    position: relative; overflow: hidden;
+    text-align: left;
+  }
+  .answer-btn:hover:not(.answered):not(.locked) {
+    transform: scale(1.04) translateY(-3px);
+    filter: brightness(1.1);
+  }
+  .answer-btn:active:not(.answered):not(.locked) {
+    transform: scale(0.95);
+  }
+  .answer-btn.a { background: linear-gradient(135deg, #e53e3e, #c0392b); box-shadow: 0 4px 16px rgba(229,62,62,0.4); }
+  .answer-btn.b { background: linear-gradient(135deg, #2980b9, #1a6fa8); box-shadow: 0 4px 16px rgba(41,128,185,0.4); }
+  .answer-btn.c { background: linear-gradient(135deg, #f39c12, #d68910); box-shadow: 0 4px 16px rgba(243,156,18,0.4); }
+  .answer-btn.d { background: linear-gradient(135deg, #27ae60, #1e8449); box-shadow: 0 4px 16px rgba(39,174,96,0.4); }
+  .answer-btn.selected { animation: starburstGlow 1s ease-in-out infinite; filter: brightness(1.15); }
+  .answer-btn.correct-flash { animation: starburstGlow 0.6s ease 3; background: linear-gradient(135deg, #27ae60, #1e8449) !important; }
+  .answer-btn.wrong-flash { animation: shakeX 0.5s ease; }
+  .answer-btn.dimmed { opacity: 0.35; transform: scale(0.97); }
+  .answer-icon {
+    width: 32px; height: 32px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .tf-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 16px; padding: 16px 20px 28px;
+  }
+  .tf-btn {
+    border: none; cursor: pointer; border-radius: var(--radius-xl);
+    padding: 28px 20px; min-height: 110px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+    font-family: 'Nunito', sans-serif; font-weight: 900; font-size: 22px;
+    color: white; transition: all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .tf-btn:hover:not(.answered) { transform: scale(1.04) translateY(-3px); filter: brightness(1.1); }
+  .tf-btn:active:not(.answered) { transform: scale(0.95); }
+  .tf-btn.verdadero { background: linear-gradient(135deg, #27ae60, #1e8449); box-shadow: 0 4px 20px rgba(39,174,96,0.4); }
+  .tf-btn.falso { background: linear-gradient(135deg, #e53e3e, #c0392b); box-shadow: 0 4px 20px rgba(229,62,62,0.4); }
+  .open-area {
+    padding: 16px 20px 28px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .sent-confirmation {
+    text-align: center; padding: 24px;
+    animation: popIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+  .sent-confirmation .big-check {
+    font-size: 52px; margin-bottom: 12px;
+    display: block;
+  }
+  .sent-title {
+    font-family: 'Nunito', sans-serif; font-weight: 900; font-size: 22px;
+    color: var(--accent-green); margin-bottom: 6px;
+  }
+
+  /* ============================
+     VIEW 4: LEADERBOARD
+  ============================ */
+  .leaderboard-view {
+    min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 20px; gap: 20px; position: relative; z-index: 1;
+  }
+  .correct-answer-banner {
+    width: 100%; max-width: 640px;
+    background: linear-gradient(135deg, rgba(70,217,138,0.2), rgba(46,204,113,0.1));
+    border: 1px solid rgba(70,217,138,0.35);
+    border-radius: var(--radius-xl);
+    padding: 18px 24px; text-align: center;
+    animation: fadeSlideUp 0.4s ease both;
+  }
+  .correct-answer-label {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px;
+    color: var(--accent-green); font-weight: 700; margin-bottom: 6px;
+  }
+  .correct-answer-text {
+    font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 20px;
+  }
+  .leaderboard-title {
+    font-family: 'Nunito', sans-serif; font-weight: 900; font-size: 26px;
+    text-align: center;
+  }
+  .leaderboard-list {
+    width: 100%; max-width: 560px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .leaderboard-item {
+    display: flex; align-items: center; gap: 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 14px 18px;
+    animation: staggerIn 0.4s ease both;
+    transition: transform 0.2s;
+  }
+  .leaderboard-item:hover { transform: translateX(4px); }
+  .leaderboard-item.rank-1 { border-color: rgba(245,200,66,0.5); background: linear-gradient(135deg, rgba(245,200,66,0.12), var(--bg-card)); }
+  .leaderboard-item.rank-2 { border-color: rgba(180,180,200,0.4); background: linear-gradient(135deg, rgba(180,180,200,0.1), var(--bg-card)); }
+  .leaderboard-item.rank-3 { border-color: rgba(200,120,60,0.4); background: linear-gradient(135deg, rgba(200,120,60,0.1), var(--bg-card)); }
+  .rank-badge {
+    width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Nunito', sans-serif; font-weight: 900; font-size: 16px;
+    flex-shrink: 0;
+  }
+  .rank-1 .rank-badge { background: linear-gradient(135deg, #f5c842, #e8b800); color: #1a1035; box-shadow: var(--shadow-glow-yellow); }
+  .rank-2 .rank-badge { background: linear-gradient(135deg, #c0c0d0, #a0a0b0); color: #1a1035; }
+  .rank-3 .rank-badge { background: linear-gradient(135deg, #cd7f32, #b8692a); color: white; }
+  .rank-default .rank-badge { background: var(--bg-elevated); color: var(--text-secondary); }
+  .player-name {
+    font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 17px; flex: 1;
+  }
+  .player-score {
+    font-family: 'Nunito', sans-serif; font-weight: 900; font-size: 18px;
+    color: var(--accent-yellow);
+    animation: countUp 0.5s ease both;
+  }
+
+  /* ============================
+     VIEW 5: RESULTS (Final)
+  ============================ */
+  .results-view {
+    min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 32px 20px 40px; gap: 32px; position: relative; z-index: 1;
+    overflow: hidden;
+  }
+  .results-title {
+    font-family: 'Nunito', sans-serif; font-weight: 900;
+    font-size: clamp(28px, 7vw, 48px);
+    background: linear-gradient(135deg, var(--accent-yellow), var(--accent-coral));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    text-align: center; animation: popIn 0.6s ease both;
+  }
+  .podium {
+    display: flex; align-items: flex-end; gap: 10px; justify-content: center;
+    width: 100%; max-width: 480px;
+  }
+  .podium-spot {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    flex: 1;
+  }
+  .podium-trophy { font-size: 32px; animation: trophyBounce 0.7s ease both; }
+  .podium-name {
+    font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 14px;
+    text-align: center; word-break: break-word;
+  }
+  .podium-score {
+    font-family: 'Nunito', sans-serif; font-weight: 900; font-size: 13px;
+    color: var(--text-secondary);
+  }
+  .podium-block {
+    width: 100%; border-radius: 12px 12px 0 0;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Nunito', sans-serif; font-weight: 900; font-size: 28px; color: white;
+  }
+  .podium-1 .podium-block { height: 110px; background: linear-gradient(180deg, #f5c842, #e8b800); animation: fadeSlideUp 0.6s 0.2s ease both; box-shadow: var(--shadow-glow-yellow); }
+  .podium-2 .podium-block { height: 80px; background: linear-gradient(180deg, #a8a8c0, #8888a0); animation: fadeSlideUp 0.6s 0.1s ease both; }
+  .podium-3 .podium-block { height: 60px; background: linear-gradient(180deg, #cd7f32, #b8692a); animation: fadeSlideUp 0.6s 0s ease both; }
+  .confetti-piece {
+    position: fixed; width: 10px; height: 10px; z-index: 200; pointer-events: none;
+    border-radius: 2px;
+    animation: confettiFall linear both;
+  }
+
+  /* ============================
+     VIEW 6: ADMIN LOGIN
+  ============================ */
+  .admin-login-view {
+    min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 32px 24px; position: relative; z-index: 1;
+  }
+  .admin-login-card { width: 100%; max-width: 400px; padding: 44px 40px; animation: fadeSlideUp 0.5s ease both; }
+  .admin-login-icon {
+    width: 64px; height: 64px; border-radius: 20px;
+    background: linear-gradient(135deg, var(--accent-purple), #7c50e8);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 30px; margin: 0 auto 24px;
+    box-shadow: 0 8px 24px rgba(155,114,245,0.4);
+  }
+  .admin-title { font-family: 'Nunito', sans-serif; font-weight: 900; font-size: 28px; text-align: center; margin-bottom: 6px; }
+  .admin-subtitle { color: var(--text-secondary); font-size: 14px; text-align: center; margin-bottom: 32px; }
+
+  /* ============================
+     VIEW 7: QUIZ LIST
+  ============================ */
+  .quiz-list-view {
+    min-height: 100vh; padding: 24px 24px 40px;
+    position: relative; z-index: 1;
+  }
+  .quiz-list-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 28px; flex-wrap: wrap; gap: 14px;
+  }
+  .quiz-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 18px;
+  }
+  .quiz-card {
+    padding: 24px; cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    animation: fadeSlideUp 0.4s ease both;
+  }
+  .quiz-card:hover { transform: translateY(-4px); box-shadow: 0 16px 40px rgba(0,0,0,0.5); }
+  .quiz-card-thumb {
+    height: 90px; border-radius: 14px; margin-bottom: 16px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 36px; position: relative; overflow: hidden;
+  }
+  .quiz-card-title { font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 18px; margin-bottom: 6px; }
+  .quiz-card-meta { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
+  .quiz-card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn-icon {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px; border-radius: 10px; border: none; cursor: pointer;
+    font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 13px;
+    transition: all 0.15s;
+  }
+  .btn-icon:hover { filter: brightness(1.15); transform: translateY(-1px); }
+  .btn-host { background: rgba(155,114,245,0.2); color: var(--accent-purple); border: 1px solid rgba(155,114,245,0.3); }
+  .btn-edit { background: rgba(61,207,207,0.15); color: var(--accent-cyan); border: 1px solid rgba(61,207,207,0.25); }
+  .btn-delete { background: rgba(244,99,74,0.15); color: var(--accent-coral); border: 1px solid rgba(244,99,74,0.25); }
+  .fab {
+    position: fixed; bottom: 28px; right: 28px;
+    width: 56px; height: 56px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent-purple), #7c50e8);
+    border: none; cursor: pointer; font-size: 26px; color: white;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 20px rgba(155,114,245,0.5);
+    transition: transform 0.2s, box-shadow 0.2s; z-index: 50;
+  }
+  .fab:hover { transform: scale(1.12) rotate(15deg); box-shadow: 0 8px 28px rgba(155,114,245,0.6); }
+
+  /* ============================
+     VIEW 8: QUIZ EDITOR
+  ============================ */
+  .quiz-editor-view { min-height: 100vh; padding: 24px 24px 80px; position: relative; z-index: 1; }
+  .editor-header {
+    display: flex; align-items: center; gap: 16px; margin-bottom: 28px; flex-wrap: wrap;
+  }
+  .quiz-meta-panel { padding: 24px; margin-bottom: 24px; }
+  .meta-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .field-group { display: flex; flex-direction: column; gap: 8px; }
+  .field-label-sm {
+    font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 12px;
+    color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.8px;
+  }
+  .input-sm {
+    background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 12px;
+    color: white; padding: 10px 14px; font-family: 'Nunito', sans-serif; font-size: 15px; outline: none;
+    transition: border-color 0.2s;
+  }
+  .input-sm:focus { border-color: var(--accent-purple); }
+  .question-cards { display: flex; flex-direction: column; gap: 12px; }
+  .q-card {
+    padding: 18px 20px;
+    display: flex; align-items: flex-start; gap: 14px;
+    animation: fadeSlideUp 0.3s ease both;
+    cursor: pointer; transition: border-color 0.2s;
+  }
+  .q-card:hover { border-color: var(--accent-purple); }
+  .q-index {
+    width: 32px; height: 32px; border-radius: 10px;
+    background: var(--bg-elevated);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 14px; color: var(--text-secondary);
+    flex-shrink: 0; margin-top: 2px;
+  }
+  .q-content { flex: 1; }
+  .q-text { font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 15px; margin-bottom: 6px; }
+  .q-actions { display: flex; gap: 6px; align-items: center; }
+  .add-question-panel { padding: 22px 24px; margin-top: 16px; }
+  .add-q-title { font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 17px; margin-bottom: 16px; }
+  .type-select { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .type-btn {
+    padding: 8px 16px; border-radius: var(--radius-full); border: 2px solid var(--border);
+    background: transparent; color: var(--text-secondary);
+    font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 13px; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .type-btn.active-blue { border-color: var(--accent-cyan); color: var(--accent-cyan); background: rgba(61,207,207,0.1); }
+  .type-btn.active-green { border-color: var(--accent-green); color: var(--accent-green); background: rgba(70,217,138,0.1); }
+  .type-btn.active-orange { border-color: var(--accent-yellow); color: var(--accent-yellow); background: rgba(245,200,66,0.1); }
+
+  /* ============================
+     VIEW 9: SESSION (Host)
+  ============================ */
+  .session-view { min-height: 100vh; padding: 24px; position: relative; z-index: 1; }
+  .session-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; flex-wrap: wrap; gap: 14px; }
+  .session-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .session-pin-card { padding: 32px; text-align: center; }
+  .session-pin-big {
+    font-family: 'Nunito', sans-serif; font-weight: 900;
+    font-size: clamp(42px, 8vw, 72px);
+    color: var(--accent-yellow); letter-spacing: 10px;
+    animation: pinGlow 2.5s ease-in-out infinite;
+    margin: 10px 0;
+  }
+  .session-players-card { padding: 24px; }
+  .session-player-list { display: flex; flex-direction: column; gap: 8px; max-height: 280px; overflow-y: auto; }
+  .session-player-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px; border-radius: 12px; background: var(--bg-elevated);
+    animation: bounceIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 15px;
+  }
+  .session-player-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-green); flex-shrink: 0; }
+  .host-controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .question-progress-card { padding: 24px; }
+  .progress-info { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .progress-bar-bg { height: 8px; background: var(--bg-elevated); border-radius: 4px; overflow: hidden; }
+  .progress-bar-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--accent-purple), var(--accent-cyan)); transition: width 0.6s ease; }
+  .answer-stats { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+  .stat-chip { display: flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 10px; background: var(--bg-elevated); font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 14px; }
+
+  /* ============================
+     MODAL
+  ============================ */
+  .modal-overlay {
+    position: fixed; inset: 0; z-index: 500;
+    background: rgba(0,0,0,0.7); backdrop-filter: blur(6px);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px; animation: fadeIn 0.2s ease;
+  }
+  .modal-box {
+    width: 100%; max-width: 480px; padding: 32px;
+    animation: popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+  .modal-title { font-family: 'Nunito', sans-serif; font-weight: 900; font-size: 22px; margin-bottom: 6px; }
+  .modal-subtitle { color: var(--text-secondary); font-size: 14px; margin-bottom: 24px; }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
+
+  /* ============================
+     TWEAKS
+  ============================ */
+  .tweaks-floating { position: fixed; bottom: 28px; right: 28px; z-index: 400; }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  @media (max-width: 600px) {
+    .meta-fields { grid-template-columns: 1fr; }
+    .session-grid { grid-template-columns: 1fr; }
+    .answer-grid { gap: 8px; }
+    .answer-btn { font-size: 14px; min-height: 68px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ===================== SAMPLE DATA =====================
+const SAMPLE_QUIZZES = [
+  { id: 1, title: "Historia Argentina", questions: 8, color: "linear-gradient(135deg,#9b72f5,#6c3fd4)", emoji: "🇦🇷" },
+  { id: 2, title: "Ciencias Naturales", questions: 12, color: "linear-gradient(135deg,#46d98a,#2bc47a)", emoji: "🌱" },
+  { id: 3, title: "Matemáticas Avanzadas", questions: 10, color: "linear-gradient(135deg,#f5c842,#e8a000)", emoji: "📐" },
+  { id: 4, title: "Literatura Universal", questions: 7, color: "linear-gradient(135deg,#f4634a,#e84a2f)", emoji: "📚" },
+  { id: 5, title: "Geografía Mundial", questions: 9, color: "linear-gradient(135deg,#3dcfcf,#1ab8b8)", emoji: "🌍" },
+];
+
+const SAMPLE_QUESTIONS = [
+  { id: 1, type: "closed", text: "¿En qué año se declaró la independencia de Argentina?", answers: ["1810","1816","1820","1825"], correct: 1 },
+  { id: 2, type: "truefalse", text: "Buenos Aires es la capital de Argentina.", correct: true },
+  { id: 3, type: "open", text: "¿Cuál es el río más largo de Sudamérica?", correct: "Amazonas" },
+  { id: 4, type: "closed", text: "¿Cuántas provincias tiene Argentina?", answers: ["22","23","24","25"], correct: 2 },
+  { id: 5, type: "truefalse", text: "El Aconcagua es la montaña más alta de América.", correct: true },
+];
+
+const LEADERBOARD_DATA = [
+  { name: "Valentina", score: 8400, prev: 1 },
+  { name: "Mateo", score: 7200, prev: 3 },
+  { name: "Luciana", score: 6800, prev: 2 },
+  { name: "Joaquín", score: 5500, prev: 4 },
+  { name: "Camila", score: 4900, prev: 6 },
+];
+
+const LOBBY_PLAYERS = ["Valentina", "Mateo", "Luciana", "Joaquín", "Camila", "Pedro", "Ana"];
+
+const ANSWER_COLORS = ["a","b","c","d"];
+const ANSWER_ICONS = [
+  <svg width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="rgba(255,255,255,0.7)"/></svg>,
+  <svg width="24" height="24" viewBox="0 0 24 24"><polygon points="12,3 21,21 3,21" fill="rgba(255,255,255,0.7)"/></svg>,
+  <svg width="24" height="24" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" fill="rgba(255,255,255,0.7)"/></svg>,
+  <svg width="24" height="24" viewBox="0 0 24 24"><polygon points="12,2 22,12 12,22 2,12" fill="rgba(255,255,255,0.7)"/></svg>,
+];
+
+// ===================== CONFETTI =====================
+function Confetti() {
+  const pieces = Array.from({length: 60}, (_, i) => ({
+    id: i,
+    left: Math.random() * 100,
+    color: ["#f5c842","#f4634a","#3dcfcf","#46d98a","#9b72f5","#ffffff"][Math.floor(Math.random() * 6)],
+    size: 7 + Math.random() * 8,
+    delay: Math.random() * 2.5,
+    duration: 2.5 + Math.random() * 2,
+  }));
+  return (
+    <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:200,overflow:"hidden"}}>
+      {pieces.map(p => (
+        <div key={p.id} className="confetti-piece" style={{
+          left: p.left + "%",
+          top: -20, width: p.size, height: p.size,
+          background: p.color,
+          animationDelay: p.delay + "s",
+          animationDuration: p.duration + "s",
+        }}/>
+      ))}
+    </div>
+  );
+}
+
+// ===================== TIMER BAR =====================
+function TimerBar({ total, remaining }) {
+  const pct = total > 0 ? (remaining / total) * 100 : 0;
+  const urgent = remaining <= 5 && remaining > 0;
+  const color = pct > 60 ? "#46d98a" : pct > 30 ? "#f5c842" : "#f4634a";
+  return (
+    <div className="timer-bar-container">
+      <div className="timer-bar-fill" style={{ width: pct + "%", background: color }} />
+    </div>
+  );
+}
+
+// ===================== HOME VIEW =====================
+function HomeView({ onJoin, tweaks }) {
+  const [pin, setPin] = useState("");
+  const [nick, setNick] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  function handleJoin() {
+    if (pin.length < 6) { setError("Ingresá un PIN de 6 dígitos"); return; }
+    if (!nick.trim()) { setError("Ingresá tu apodo"); return; }
+    setError(""); setLoading(true);
+    setTimeout(() => { setLoading(false); onJoin(nick); }, 900);
+  }
+  return (
+    <div className="home-view view-transition-enter" style={{paddingTop: 0}}>
+      <div className="floating-shapes">
+        {[{s:220,t:"15%",l:"5%",d:0},{s:140,t:"60%",l:"75%",d:2},{s:80,t:"35%",l:"60%",d:1},{s:100,t:"75%",l:"10%",d:3}].map((sh,i)=>(
+          <div key={i} className="shape" style={{width:sh.s,height:sh.s,top:sh.t,left:sh.l,animation:`floatDot ${4+i}s ease-in-out ${sh.d}s infinite`}}/>
+        ))}
+      </div>
+      <div className="home-logo-big">QuizPlay</div>
+      <div className="home-tagline">El quiz más divertido en tiempo real 🎮</div>
+      <div className="card home-card">
+        <div className="field-group">
+          <label className="field-label">PIN del juego</label>
+          <input
+            className="input-field"
+            placeholder="000000"
+            maxLength={6}
+            value={pin}
+            onChange={e => setPin(e.target.value.replace(/\D/g, ""))}
+            onKeyDown={e => e.key === "Enter" && handleJoin()}
+          />
+        </div>
+        <div className="field-group">
+          <label className="field-label">Tu apodo</label>
+          <input
+            className="input-field"
+            style={{letterSpacing:"1px", fontSize: "20px"}}
+            placeholder="SuperJugador"
+            maxLength={20}
+            value={nick}
+            onChange={e => setNick(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleJoin()}
+          />
+        </div>
+        {error && <div style={{color:"var(--accent-coral)",fontFamily:"Nunito",fontWeight:700,fontSize:14,marginBottom:12,textAlign:"center"}}>{error}</div>}
+        <button
+          className={`btn btn-yellow ${loading ? "btn-disabled" : ""}`}
+          style={{width:"100%", marginTop:8}}
+          onClick={handleJoin}
+        >
+          {loading ? "Uniendo…" : "¡Unirse al juego!"}
+        </button>
+      </div>
+      <div style={{marginTop:24,color:"var(--text-muted)",fontSize:13,fontFamily:"Nunito",fontWeight:700}}>
+        ¿Sos el host?{" "}
+        <span style={{color:"var(--accent-cyan)",cursor:"pointer",textDecoration:"underline"}} onClick={() => {}}>
+          Accedé al panel de administración
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ===================== LOBBY VIEW =====================
+function LobbyView({ nickname, onGameStart, tweaks }) {
+  const [players, setPlayers] = useState(LOBBY_PLAYERS.slice(0, 3));
+  useEffect(() => {
+    let i = 3;
+    const int = setInterval(() => {
+      if (i < LOBBY_PLAYERS.length) {
+        setPlayers(p => [...p, LOBBY_PLAYERS[i++]]);
+      } else clearInterval(int);
+    }, 1800);
+    return () => clearInterval(int);
+  }, []);
+  return (
+    <div className="lobby-view view-transition-enter">
+      <div className="card pin-display" style={{width:"100%",maxWidth:500}}>
+        <div className="pin-label">PIN del juego</div>
+        <div className="pin-number">347821</div>
+        <div className="waiting-msg" style={{justifyContent:"center",marginTop:8}}>
+          <div className="waiting-dot"/>
+          Esperando que el host inicie el juego…
+        </div>
+      </div>
+
+      <div style={{textAlign:"center"}}>
+        <div style={{fontFamily:"Nunito",fontWeight:700,fontSize:13,color:"var(--text-secondary)",textTransform:"uppercase",letterSpacing:"1px",marginBottom:14}}>
+          Jugadores conectados — {players.length}
+        </div>
+        <div className="player-list">
+          {players.map((p, i) => (
+            <div
+              key={p}
+              className={`player-chip ${p === nickname ? "is-me" : ""}`}
+              style={{animationDelay: `${i * 0.05}s`}}
+            >
+              {p === nickname ? "⭐ " : ""}{p}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{marginTop:16}}>
+        <button className="btn btn-green" onClick={onGameStart}>
+          Simular inicio del juego ▶
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ===================== GAME VIEW =====================
+function GameView({ nickname, onFinish, tweaks }) {
+  const [qIndex, setQIndex] = useState(0);
+  const [selected, setSelected] = useState(null);
+  const [sent, setSent] = useState(false);
+  const [feedback, setFeedback] = useState(null); // 'correct' | 'wrong'
+  const [timeLeft, setTimeLeft] = useState(20);
+  const totalTime = 20;
+  const q = SAMPLE_QUESTIONS[qIndex];
+
+  useEffect(() => {
+    setSelected(null); setSent(false); setFeedback(null); setTimeLeft(20);
+  }, [qIndex]);
+
+  useEffect(() => {
+    if (sent) return;
+    const t = setInterval(() => setTimeLeft(n => Math.max(0, n - 1)), 1000);
+    return () => clearInterval(t);
+  }, [sent, qIndex]);
+
+  function handleAnswer(idx) {
+    if (sent) return;
+    setSelected(idx);
+    setSent(true);
+    const correct = q.type === "truefalse" ? idx === (q.correct ? 0 : 1) : idx === q.correct;
+    setFeedback(correct ? "correct" : "wrong");
+  }
+  function handleOpen(e) {
+    if (e.key === "Enter" || e.type === "click") {
+      setSent(true); setFeedback("correct");
+    }
+  }
+  function next() {
+    if (qIndex < SAMPLE_QUESTIONS.length - 1) setQIndex(i => i + 1);
+    else onFinish();
+  }
+
+  const urgent = timeLeft <= 5 && timeLeft > 0;
+  return (
+    <div className="game-view view-transition-enter">
+      <TimerBar total={totalTime} remaining={timeLeft} />
+      <div className="question-area">
+        <div className="question-number">Pregunta {qIndex+1} / {SAMPLE_QUESTIONS.length}</div>
+        <div className="question-text">{q.text}</div>
+        <div className={`timer-countdown ${urgent ? "urgent" : ""}`}>{timeLeft}</div>
+      </div>
+
+      {!sent ? (
+        <>
+          {q.type === "closed" && (
+            <div className="answer-grid">
+              {q.answers.map((ans, i) => (
+                <button
+                  key={i}
+                  className={`answer-btn ${ANSWER_COLORS[i]}`}
+                  onClick={() => handleAnswer(i)}
+                >
+                  <span className="answer-icon">{ANSWER_ICONS[i]}</span>
+                  {ans}
+                </button>
+              ))}
+            </div>
+          )}
+          {q.type === "truefalse" && (
+            <div className="tf-grid">
+              <button className="tf-btn verdadero" onClick={() => handleAnswer(0)}>
+                <span style={{fontSize:28}}>✓</span> Verdadero
+              </button>
+              <button className="tf-btn falso" onClick={() => handleAnswer(1)}>
+                <span style={{fontSize:28}}>✗</span> Falso
+              </button>
+            </div>
+          )}
+          {q.type === "open" && (
+            <div className="open-area">
+              <input
+                className="input-field input-normal"
+                placeholder="Escribí tu respuesta…"
+                onKeyDown={handleOpen}
+                style={{fontSize:18,letterSpacing:0,textAlign:"left"}}
+              />
+              <button className="btn btn-primary" onClick={handleOpen}>Responder</button>
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="sent-confirmation" style={{padding:"20px 24px 32px"}}>
+          <span className="big-check">{feedback === "correct" ? "🎉" : "😬"}</span>
+          <div className="sent-title">
+            {feedback === "correct" ? "¡Correcto!" : "Incorrecto"}
+          </div>
+          <div style={{color:"var(--text-secondary)",fontSize:15,marginBottom:20}}>
+            {feedback === "correct" ? "¡Respuesta enviada! Ganás puntos extra por velocidad." : "¡Respuesta enviada! La respuesta correcta se revelará pronto."}
+          </div>
+          <button className="btn btn-primary btn-sm" onClick={next}>
+            {qIndex < SAMPLE_QUESTIONS.length - 1 ? "Siguiente →" : "Ver resultados finales"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ===================== LEADERBOARD VIEW =====================
+function LeaderboardView({ onContinue, tweaks }) {
+  return (
+    <div className="leaderboard-view view-transition-enter">
+      <div className="correct-answer-banner">
+        <div className="correct-answer-label">Respuesta correcta</div>
+        <div className="correct-answer-text">1816 — Declaración de Independencia Argentina</div>
+      </div>
+      <div className="leaderboard-title">🏆 Tabla de posiciones</div>
+      <div className="leaderboard-list">
+        {LEADERBOARD_DATA.map((p, i) => (
+          <div
+            key={p.name}
+            className={`leaderboard-item rank-${i < 3 ? i+1 : "default"}`}
+            style={{animationDelay: `${i * 0.1}s`}}
+          >
+            <div className="rank-badge">{i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : i+1}</div>
+            <div className="player-name">{p.name}</div>
+            <div className="player-score" style={{animationDelay: `${i * 0.15 + 0.3}s`}}>
+              {p.score.toLocaleString("es-AR")} pts
+            </div>
+          </div>
+        ))}
+      </div>
+      <button className="btn btn-primary" onClick={onContinue}>Siguiente pregunta →</button>
+    </div>
+  );
+}
+
+// ===================== RESULTS VIEW =====================
+function ResultsView({ onRestart, tweaks }) {
+  const top3 = LEADERBOARD_DATA.slice(0,3);
+  return (
+    <div className="results-view view-transition-enter">
+      <Confetti />
+      <div className="results-title">🎊 ¡Juego terminado!</div>
+      <div style={{color:"var(--text-secondary)",fontFamily:"Nunito",fontWeight:700,fontSize:16,textAlign:"center",marginTop:-20}}>
+        Gracias por jugar — estos son los ganadores
+      </div>
+
+      <div className="podium">
+        {/* 2nd */}
+        <div className="podium-spot podium-2" style={{animationDelay:"0.1s"}}>
+          <div className="podium-trophy" style={{animationDelay:"0.5s"}}>🥈</div>
+          <div className="podium-name">{top3[1].name}</div>
+          <div className="podium-score">{top3[1].score.toLocaleString("es-AR")} pts</div>
+          <div className="podium-block">2</div>
+        </div>
+        {/* 1st */}
+        <div className="podium-spot podium-1">
+          <div className="podium-trophy" style={{animationDelay:"0.6s"}}>🥇</div>
+          <div className="podium-name" style={{fontFamily:"Nunito",fontWeight:900,fontSize:16}}>{top3[0].name}</div>
+          <div className="podium-score">{top3[0].score.toLocaleString("es-AR")} pts</div>
+          <div className="podium-block">1</div>
+        </div>
+        {/* 3rd */}
+        <div className="podium-spot podium-3" style={{animationDelay:"0s"}}>
+          <div className="podium-trophy" style={{animationDelay:"0.4s"}}>🥉</div>
+          <div className="podium-name">{top3[2].name}</div>
+          <div className="podium-score">{top3[2].score.toLocaleString("es-AR")} pts</div>
+          <div className="podium-block">3</div>
+        </div>
+      </div>
+
+      <div style={{width:"100%",maxWidth:480}}>
+        <div style={{fontFamily:"Nunito",fontWeight:800,fontSize:16,marginBottom:12,color:"var(--text-secondary)"}}>
+          Clasificación final completa
+        </div>
+        <div className="leaderboard-list">
+          {LEADERBOARD_DATA.map((p, i) => (
+            <div key={p.name} className={`leaderboard-item rank-${i < 3 ? i+1 : "default"}`} style={{animationDelay:`${i*0.1}s`}}>
+              <div className="rank-badge">{i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : i+1}</div>
+              <div className="player-name">{p.name}</div>
+              <div className="player-score">{p.score.toLocaleString("es-AR")} pts</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <button className="btn btn-yellow" onClick={onRestart}>Jugar de nuevo 🔄</button>
+    </div>
+  );
+}
+
+// ===================== ADMIN LOGIN =====================
+function AdminLoginView({ onLogin, tweaks }) {
+  const [pw, setPw] = useState("");
+  const [error, setError] = useState(false);
+  function tryLogin() {
+    if (pw.length < 1) { setError(true); return; }
+    onLogin();
+  }
+  return (
+    <div className="admin-login-view view-transition-enter">
+      <div className="card admin-login-card">
+        <div className="admin-login-icon">🎯</div>
+        <div className="admin-title">Panel de Administración</div>
+        <div className="admin-subtitle">Ingresá tu contraseña para continuar</div>
+        <div style={{marginBottom:20}}>
+          <label className="field-label-sm" style={{display:"block",marginBottom:8}}>Contraseña</label>
+          <input
+            type="password"
+            className="input-field input-normal"
+            placeholder="••••••••"
+            value={pw}
+            onChange={e => { setPw(e.target.value); setError(false); }}
+            onKeyDown={e => e.key === "Enter" && tryLogin()}
+            style={{border: error ? "2px solid var(--accent-coral)" : undefined}}
+          />
+          {error && <div style={{color:"var(--accent-coral)",fontFamily:"Nunito",fontWeight:700,fontSize:13,marginTop:6}}>Contraseña incorrecta</div>}
+        </div>
+        <button className="btn btn-primary" style={{width:"100%"}} onClick={tryLogin}>
+          Ingresar →
+        </button>
+        <div style={{textAlign:"center",marginTop:16,color:"var(--text-muted)",fontSize:13,fontFamily:"Nunito"}}>
+          (Cualquier contraseña funciona en este demo)
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ===================== QUIZ LIST =====================
+function QuizListView({ onEdit, onHost, tweaks }) {
+  const [quizzes, setQuizzes] = useState(SAMPLE_QUIZZES);
+  function deleteQuiz(id) { setQuizzes(q => q.filter(x => x.id !== id)); }
+  return (
+    <div className="quiz-list-view view-transition-enter">
+      <div className="quiz-list-header">
+        <div>
+          <div style={{fontFamily:"Nunito",fontWeight:900,fontSize:28}}>Mis quizzes</div>
+          <div style={{color:"var(--text-secondary)",fontSize:14,marginTop:4}}>{quizzes.length} quizzes disponibles</div>
+        </div>
+        <button className="btn btn-primary btn-sm" onClick={() => onEdit(null)}>
+          + Nuevo quiz
+        </button>
+      </div>
+      <div className="quiz-grid">
+        {quizzes.map((q, i) => (
+          <div key={q.id} className="card quiz-card" style={{animationDelay:`${i*0.08}s`}}>
+            <div className="quiz-card-thumb" style={{background: q.color}}>
+              <span style={{fontSize:42, filter:"drop-shadow(0 2px 8px rgba(0,0,0,0.3))"}}>{q.emoji}</span>
+            </div>
+            <div className="quiz-card-title">{q.title}</div>
+            <div className="quiz-card-meta">📋 {q.questions} preguntas</div>
+            <div className="quiz-card-actions">
+              <button className="btn-icon btn-host" onClick={() => onHost(q)}>▶ Hostear</button>
+              <button className="btn-icon btn-edit" onClick={() => onEdit(q)}>✎ Editar</button>
+              <button className="btn-icon btn-delete" onClick={() => deleteQuiz(q.id)}>✕ Eliminar</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <button className="fab" title="Nuevo quiz" onClick={() => onEdit(null)}>+</button>
+    </div>
+  );
+}
+
+// ===================== QUIZ EDITOR =====================
+function QuizEditorView({ quiz, onBack, tweaks }) {
+  const [qType, setQType] = useState("closed");
+  const [questions, setQuestions] = useState(SAMPLE_QUESTIONS);
+  const [newQ, setNewQ] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
+
+  function addQuestion() {
+    if (!newQ.trim()) return;
+    const typeMap = {closed:"cerrada",truefalse:"V/F",open:"abierta"};
+    setQuestions(q => [...q, { id: Date.now(), type: qType, text: newQ, answers: [], correct: 0 }]);
+    setNewQ(""); setShowAdd(false);
+  }
+  function removeQ(id) { setQuestions(q => q.filter(x => x.id !== id)); }
+  const typeBadge = { closed: <span className="badge badge-blue">⬤ Cerrada</span>, truefalse: <span className="badge badge-green">V/F</span>, open: <span className="badge badge-orange">✎ Abierta</span> };
+  return (
+    <div className="quiz-editor-view view-transition-enter">
+      <div className="editor-header">
+        <button className="btn btn-ghost" onClick={onBack}>← Volver</button>
+        <div style={{fontFamily:"Nunito",fontWeight:900,fontSize:24,flex:1}}>
+          {quiz ? quiz.title : "Nuevo quiz"}
+        </div>
+        <button className="btn btn-green btn-sm">Crear sesión →</button>
+      </div>
+
+      <div className="card quiz-meta-panel">
+        <div style={{fontFamily:"Nunito",fontWeight:800,fontSize:16,marginBottom:16}}>Información del quiz</div>
+        <div className="meta-fields">
+          <div className="field-group">
+            <label className="field-label-sm">Título</label>
+            <input className="input-sm" defaultValue={quiz?.title || ""} placeholder="Título del quiz" />
+          </div>
+          <div className="field-group">
+            <label className="field-label-sm">Descripción</label>
+            <input className="input-sm" defaultValue="" placeholder="Descripción breve" />
+          </div>
+        </div>
+      </div>
+
+      <div style={{fontFamily:"Nunito",fontWeight:800,fontSize:18,marginBottom:14}}>
+        Preguntas ({questions.length})
+      </div>
+      <div className="question-cards">
+        {questions.map((q, i) => (
+          <div key={q.id} className="card q-card" style={{animationDelay:`${i*0.06}s`}}>
+            <div className="q-index">{i+1}</div>
+            <div className="q-content">
+              <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:6}}>
+                {typeBadge[q.type]}
+              </div>
+              <div className="q-text">{q.text}</div>
+            </div>
+            <div className="q-actions">
+              <button className="btn-icon btn-edit">✎</button>
+              <button className="btn-icon btn-delete" onClick={() => removeQ(q.id)}>✕</button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="card add-question-panel">
+        <div className="add-q-title">+ Agregar pregunta</div>
+        <div style={{marginBottom:12}}>
+          <label className="field-label-sm" style={{display:"block",marginBottom:8}}>Tipo de pregunta</label>
+          <div className="type-select">
+            {[["closed","Cerrada","active-blue"],["truefalse","Verdadero/Falso","active-green"],["open","Abierta","active-orange"]].map(([t,l,cls]) => (
+              <button key={t} className={`type-btn ${qType===t ? cls : ""}`} onClick={() => setQType(t)}>{l}</button>
+            ))}
+          </div>
+        </div>
+        <div style={{marginBottom:12}}>
+          <label className="field-label-sm" style={{display:"block",marginBottom:8}}>Texto de la pregunta</label>
+          <input
+            className="input-sm" style={{width:"100%"}}
+            placeholder="Escribí la pregunta…"
+            value={newQ}
+            onChange={e => setNewQ(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && addQuestion()}
+          />
+        </div>
+        <button className="btn btn-yellow btn-sm" onClick={addQuestion}>Agregar pregunta</button>
+      </div>
+    </div>
+  );
+}
+
+// ===================== SESSION VIEW =====================
+function SessionView({ quiz, onBack, tweaks }) {
+  const [phase, setPhase] = useState("lobby"); // lobby | playing | done
+  const [players, setPlayers] = useState(["Valentina","Mateo"]);
+  const [qIndex, setQIndex] = useState(0);
+  const [answerCount, setAnswerCount] = useState(0);
+
+  useEffect(() => {
+    if (phase !== "lobby") return;
+    let i = 2;
+    const int = setInterval(() => {
+      if (i < LOBBY_PLAYERS.length) setPlayers(p => [...p, LOBBY_PLAYERS[i++]]);
+      else clearInterval(int);
+    }, 2200);
+    return () => clearInterval(int);
+  }, [phase]);
+
+  useEffect(() => {
+    if (phase !== "playing") return;
+    setAnswerCount(0);
+    const int = setInterval(() => setAnswerCount(n => Math.min(n + 1, players.length)), 1400);
+    return () => clearInterval(int);
+  }, [phase, qIndex]);
+
+  function startGame() { setPhase("playing"); }
+  function nextQ() {
+    if (qIndex < SAMPLE_QUESTIONS.length - 1) { setQIndex(i => i + 1); }
+    else setPhase("done");
+  }
+
+  return (
+    <div className="session-view view-transition-enter">
+      <div className="session-header">
+        <div>
+          <button className="btn btn-ghost" onClick={onBack} style={{marginBottom:6}}>← Volver</button>
+          <div style={{fontFamily:"Nunito",fontWeight:900,fontSize:22}}>
+            {quiz?.title || "Sesión de juego"}
+          </div>
+          <div style={{color:"var(--text-secondary)",fontSize:13,marginTop:2}}>
+            {phase === "lobby" ? "Sala de espera — mostrá el PIN en pantalla" : phase === "playing" ? `Pregunta ${qIndex+1}/${SAMPLE_QUESTIONS.length}` : "¡Juego terminado!"}
+          </div>
+        </div>
+        <div className="host-controls">
+          {phase === "lobby" && (
+            <button className={`btn btn-green ${players.length < 1 ? "btn-disabled" : ""}`} onClick={startGame}>
+              ▶ Iniciar juego ({players.length} jugadores)
+            </button>
+          )}
+          {phase === "playing" && (
+            <>
+              <button className="btn btn-primary btn-sm" onClick={nextQ}>
+                {qIndex < SAMPLE_QUESTIONS.length - 1 ? "Siguiente pregunta →" : "Terminar juego"}
+              </button>
+            </>
+          )}
+          {phase === "done" && <div style={{fontFamily:"Nunito",fontWeight:800,fontSize:18,color:"var(--accent-yellow)"}}>🎉 ¡Juego completado!</div>}
+        </div>
+      </div>
+
+      <div className="session-grid">
+        <div className="card session-pin-card">
+          <div className="pin-label">PIN de la sesión</div>
+          <div className="session-pin-big">347 821</div>
+          <div style={{color:"var(--text-secondary)",fontSize:13,fontFamily:"Nunito",fontWeight:700}}>
+            Mostrá este PIN en la pantalla principal
+          </div>
+          <div style={{marginTop:16,display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
+            <div style={{background:"var(--bg-elevated)",borderRadius:12,padding:"10px 20px",fontFamily:"Nunito",fontWeight:700,fontSize:13,color:"var(--accent-green)"}}>
+              🟢 {players.length} jugadores conectados
+            </div>
+          </div>
+        </div>
+
+        <div className="card session-players-card">
+          <div style={{fontFamily:"Nunito",fontWeight:800,fontSize:16,marginBottom:14}}>
+            Jugadores en sala
+          </div>
+          <div className="session-player-list">
+            {players.map((p, i) => (
+              <div key={p} className="session-player-row" style={{animationDelay:`${i*0.06}s`}}>
+                <div className="session-player-dot"/>
+                {p}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {phase === "playing" && (
+          <div className="card question-progress-card" style={{gridColumn:"1/-1"}}>
+            <div className="progress-info">
+              <div style={{fontFamily:"Nunito",fontWeight:800,fontSize:15}}>
+                Pregunta actual: {SAMPLE_QUESTIONS[qIndex].text}
+              </div>
+              <span className="badge badge-blue">{qIndex+1}/{SAMPLE_QUESTIONS.length}</span>
+            </div>
+            <div className="progress-bar-bg">
+              <div className="progress-bar-fill" style={{width:`${((qIndex+1)/SAMPLE_QUESTIONS.length)*100}%`}}/>
+            </div>
+            <div className="answer-stats">
+              <div className="stat-chip">
+                <span style={{color:"var(--accent-green)"}}>●</span>
+                {answerCount} respuestas recibidas
+              </div>
+              <div className="stat-chip">
+                <span style={{color:"var(--text-muted)"}}>●</span>
+                {players.length - answerCount} esperando
+              </div>
+              <div className="stat-chip">
+                <span style={{color:"var(--accent-yellow)"}}>●</span>
+                {Math.round((answerCount/players.length)*100)}% respondieron
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ===================== MAIN APP =====================
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accentColor": "#9b72f5",
+  "bgColor": "#0e0b24",
+  "fontRound": true,
+  "animationsOn": true,
+  "denseLayout": false
+}/*EDITMODE-END*/;
+
+function App() {
+  // Player flow
+  const [playerView, setPlayerView] = useState("home"); // home | lobby | game | leaderboard | results
+  const [adminView, setAdminView] = useState("login"); // login | quizList | editor | session
+  const [activeTab, setActiveTab] = useState("player");
+  const [nickname, setNickname] = useState("");
+  const [selectedQuiz, setSelectedQuiz] = useState(null);
+  const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
+
+  const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
+
+  function handleJoin(nick) { setNickname(nick); setPlayerView("lobby"); }
+  function handleGameStart() { setPlayerView("game"); }
+  function handleGameFinish() { setPlayerView("leaderboard"); }
+  function handleLeaderboardNext() { setPlayerView("results"); }
+  function handleRestart() { setPlayerView("home"); setNickname(""); }
+
+  function handleAdminLogin() { setAdminView("quizList"); }
+  function handleEditQuiz(quiz) { setSelectedQuiz(quiz); setAdminView("editor"); }
+  function handleHostQuiz(quiz) { setSelectedQuiz(quiz); setAdminView("session"); }
+  function handleBackToList() { setAdminView("quizList"); }
+
+  // Apply tweaks
+  useEffect(() => {
+    if (!tweaks) return;
+    document.documentElement.style.setProperty("--accent-purple", tweaks.accentColor);
+    document.body.style.fontFamily = tweaks.fontRound ? "'Nunito', sans-serif" : "'Inter', sans-serif";
+    document.documentElement.style.setProperty("--bg-deep", tweaks.bgColor);
+  }, [tweaks]);
+
+  return (
+    <div className="app-shell" style={{background: tweaks?.animationsOn === false ? "var(--bg-deep)" : undefined}}>
+      <div className="bg-dots"/>
+      <div className="bg-gradient"/>
+
+      {/* NAV */}
+      <nav className="top-nav">
+        <div className="logo">QuizPlay</div>
+        <div className="nav-tabs">
+          <button className={`nav-tab ${activeTab === "player" ? "active" : ""}`} onClick={() => setActiveTab("player")}>
+            Jugador
+          </button>
+          <button className={`nav-tab ${activeTab === "admin" ? "active" : ""}`} onClick={() => setActiveTab("admin")}>
+            Admin / Host
+          </button>
+        </div>
+        <div style={{width:80, display:"flex", justifyContent:"flex-end"}}>
+          {activeTab === "player" && playerView !== "home" && (
+            <button className="btn btn-ghost btn-sm" onClick={() => { setPlayerView("home"); setNickname(""); }}>
+              ← Inicio
+            </button>
+          )}
+        </div>
+      </nav>
+
+      {/* PLAYER FLOW */}
+      {activeTab === "player" && (
+        <div className="view-wrapper">
+          {playerView === "home" && <HomeView onJoin={handleJoin} tweaks={tweaks} />}
+          {playerView === "lobby" && <LobbyView nickname={nickname} onGameStart={handleGameStart} tweaks={tweaks} />}
+          {playerView === "game" && <GameView nickname={nickname} onFinish={handleGameFinish} tweaks={tweaks} />}
+          {playerView === "leaderboard" && <LeaderboardView onContinue={handleLeaderboardNext} tweaks={tweaks} />}
+          {playerView === "results" && <ResultsView onRestart={handleRestart} tweaks={tweaks} />}
+        </div>
+      )}
+
+      {/* ADMIN FLOW */}
+      {activeTab === "admin" && (
+        <div className="view-wrapper">
+          {adminView === "login" && <AdminLoginView onLogin={handleAdminLogin} tweaks={tweaks} />}
+          {adminView === "quizList" && (
+            <QuizListView
+              onEdit={handleEditQuiz}
+              onHost={handleHostQuiz}
+              tweaks={tweaks}
+            />
+          )}
+          {adminView === "editor" && <QuizEditorView quiz={selectedQuiz} onBack={handleBackToList} tweaks={tweaks} />}
+          {adminView === "session" && <SessionView quiz={selectedQuiz} onBack={handleBackToList} tweaks={tweaks} />}
+        </div>
+      )}
+
+      {/* TWEAKS PANEL */}
+      <TweaksPanel>
+        <TweakSection title="Color de acento">
+          <TweakColor id="accentColor" label="Color principal" />
+        </TweakSection>
+        <TweakSection title="Fondo">
+          <TweakColor id="bgColor" label="Color de fondo" />
+        </TweakSection>
+        <TweakSection title="Opciones">
+          <TweakToggle id="fontRound" label="Fuente redondeada (Nunito)" />
+          <TweakToggle id="animationsOn" label="Animaciones activas" />
+        </TweakSection>
+      </TweaksPanel>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
+                                                                                                                                                                                                                                                                       kahoot/project/tweaks-panel.jsx                                                                     0000644 0000000 0000000 00000044010 15175764361 015336  0                                                                                                    ustar 00                                                                0000000 0000000                                                                                                                                                                        
+// tweaks-panel.jsx
+// Reusable Tweaks shell + form-control helpers.
+//
+// Owns the host protocol (listens for __activate_edit_mode / __deactivate_edit_mode,
+// posts __edit_mode_available / __edit_mode_set_keys / __edit_mode_dismissed) so
+// individual prototypes don't re-roll it. Ships a consistent set of controls so you
+// don't hand-draw <input type="range">, segmented radios, steppers, etc.
+//
+// Usage (in an HTML file that loads React + Babel):
+//
+//   const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+//     "primaryColor": "#D97757",
+//     "fontSize": 16,
+//     "density": "regular",
+//     "dark": false
+//   }/*EDITMODE-END*/;
+//
+//   function App() {
+//     const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+//     return (
+//       <div style={{ fontSize: t.fontSize, color: t.primaryColor }}>
+//         Hello
+//         <TweaksPanel>
+//           <TweakSection label="Typography" />
+//           <TweakSlider label="Font size" value={t.fontSize} min={10} max={32} unit="px"
+//                        onChange={(v) => setTweak('fontSize', v)} />
+//           <TweakRadio  label="Density" value={t.density}
+//                        options={['compact', 'regular', 'comfy']}
+//                        onChange={(v) => setTweak('density', v)} />
+//           <TweakSection label="Theme" />
+//           <TweakColor  label="Primary" value={t.primaryColor}
+//                        onChange={(v) => setTweak('primaryColor', v)} />
+//           <TweakToggle label="Dark mode" value={t.dark}
+//                        onChange={(v) => setTweak('dark', v)} />
+//         </TweaksPanel>
+//       </div>
+//     );
+//   }
+//
+// ─────────────────────────────────────────────────────────────────────────────
+
+const __TWEAKS_STYLE = `
+  .twk-panel{position:fixed;right:16px;bottom:16px;z-index:2147483646;width:280px;
+    max-height:calc(100vh - 32px);display:flex;flex-direction:column;
+    background:rgba(250,249,247,.78);color:#29261b;
+    -webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%);
+    border:.5px solid rgba(255,255,255,.6);border-radius:14px;
+    box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 12px 40px rgba(0,0,0,.18);
+    font:11.5px/1.4 ui-sans-serif,system-ui,-apple-system,sans-serif;overflow:hidden}
+  .twk-hd{display:flex;align-items:center;justify-content:space-between;
+    padding:10px 8px 10px 14px;cursor:move;user-select:none}
+  .twk-hd b{font-size:12px;font-weight:600;letter-spacing:.01em}
+  .twk-x{appearance:none;border:0;background:transparent;color:rgba(41,38,27,.55);
+    width:22px;height:22px;border-radius:6px;cursor:default;font-size:13px;line-height:1}
+  .twk-x:hover{background:rgba(0,0,0,.06);color:#29261b}
+  .twk-body{padding:2px 14px 14px;display:flex;flex-direction:column;gap:10px;
+    overflow-y:auto;overflow-x:hidden;min-height:0;
+    scrollbar-width:thin;scrollbar-color:rgba(0,0,0,.15) transparent}
+  .twk-body::-webkit-scrollbar{width:8px}
+  .twk-body::-webkit-scrollbar-track{background:transparent;margin:2px}
+  .twk-body::-webkit-scrollbar-thumb{background:rgba(0,0,0,.15);border-radius:4px;
+    border:2px solid transparent;background-clip:content-box}
+  .twk-body::-webkit-scrollbar-thumb:hover{background:rgba(0,0,0,.25);
+    border:2px solid transparent;background-clip:content-box}
+  .twk-row{display:flex;flex-direction:column;gap:5px}
+  .twk-row-h{flex-direction:row;align-items:center;justify-content:space-between;gap:10px}
+  .twk-lbl{display:flex;justify-content:space-between;align-items:baseline;
+    color:rgba(41,38,27,.72)}
+  .twk-lbl>span:first-child{font-weight:500}
+  .twk-val{color:rgba(41,38,27,.5);font-variant-numeric:tabular-nums}
+
+  .twk-sect{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+    color:rgba(41,38,27,.45);padding:10px 0 0}
+  .twk-sect:first-child{padding-top:0}
+
+  .twk-field{appearance:none;width:100%;height:26px;padding:0 8px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:7px;
+    background:rgba(255,255,255,.6);color:inherit;font:inherit;outline:none}
+  .twk-field:focus{border-color:rgba(0,0,0,.25);background:rgba(255,255,255,.85)}
+  select.twk-field{padding-right:22px;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='rgba(0,0,0,.5)' d='M0 0h10L5 6z'/></svg>");
+    background-repeat:no-repeat;background-position:right 8px center}
+
+  .twk-slider{appearance:none;-webkit-appearance:none;width:100%;height:4px;margin:6px 0;
+    border-radius:999px;background:rgba(0,0,0,.12);outline:none}
+  .twk-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+    width:14px;height:14px;border-radius:50%;background:#fff;
+    border:.5px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:default}
+  .twk-slider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;
+    background:#fff;border:.5px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:default}
+
+  .twk-seg{position:relative;display:flex;padding:2px;border-radius:8px;
+    background:rgba(0,0,0,.06);user-select:none}
+  .twk-seg-thumb{position:absolute;top:2px;bottom:2px;border-radius:6px;
+    background:rgba(255,255,255,.9);box-shadow:0 1px 2px rgba(0,0,0,.12);
+    transition:left .15s cubic-bezier(.3,.7,.4,1),width .15s}
+  .twk-seg.dragging .twk-seg-thumb{transition:none}
+  .twk-seg button{appearance:none;position:relative;z-index:1;flex:1;border:0;
+    background:transparent;color:inherit;font:inherit;font-weight:500;min-height:22px;
+    border-radius:6px;cursor:default;padding:4px 6px;line-height:1.2;
+    overflow-wrap:anywhere}
+
+  .twk-toggle{position:relative;width:32px;height:18px;border:0;border-radius:999px;
+    background:rgba(0,0,0,.15);transition:background .15s;cursor:default;padding:0}
+  .twk-toggle[data-on="1"]{background:#34c759}
+  .twk-toggle i{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
+    background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+  .twk-toggle[data-on="1"] i{transform:translateX(14px)}
+
+  .twk-num{display:flex;align-items:center;height:26px;padding:0 0 0 8px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:7px;background:rgba(255,255,255,.6)}
+  .twk-num-lbl{font-weight:500;color:rgba(41,38,27,.6);cursor:ew-resize;
+    user-select:none;padding-right:8px}
+  .twk-num input{flex:1;min-width:0;height:100%;border:0;background:transparent;
+    font:inherit;font-variant-numeric:tabular-nums;text-align:right;padding:0 8px 0 0;
+    outline:none;color:inherit;-moz-appearance:textfield}
+  .twk-num input::-webkit-inner-spin-button,.twk-num input::-webkit-outer-spin-button{
+    -webkit-appearance:none;margin:0}
+  .twk-num-unit{padding-right:8px;color:rgba(41,38,27,.45)}
+
+  .twk-btn{appearance:none;height:26px;padding:0 12px;border:0;border-radius:7px;
+    background:rgba(0,0,0,.78);color:#fff;font:inherit;font-weight:500;cursor:default}
+  .twk-btn:hover{background:rgba(0,0,0,.88)}
+  .twk-btn.secondary{background:rgba(0,0,0,.06);color:inherit}
+  .twk-btn.secondary:hover{background:rgba(0,0,0,.1)}
+
+  .twk-swatch{appearance:none;-webkit-appearance:none;width:56px;height:22px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:6px;padding:0;cursor:default;
+    background:transparent;flex-shrink:0}
+  .twk-swatch::-webkit-color-swatch-wrapper{padding:0}
+  .twk-swatch::-webkit-color-swatch{border:0;border-radius:5.5px}
+  .twk-swatch::-moz-color-swatch{border:0;border-radius:5.5px}
+`;
+
+// ── useTweaks ───────────────────────────────────────────────────────────────
+// Single source of truth for tweak values. setTweak persists via the host
+// (__edit_mode_set_keys → host rewrites the EDITMODE block on disk).
+function useTweaks(defaults) {
+  const [values, setValues] = React.useState(defaults);
+  // Accepts either setTweak('key', value) or setTweak({ key: value, ... }) so a
+  // useState-style call doesn't write a "[object Object]" key into the persisted
+  // JSON block.
+  const setTweak = React.useCallback((keyOrEdits, val) => {
+    const edits = typeof keyOrEdits === 'object' && keyOrEdits !== null
+      ? keyOrEdits : { [keyOrEdits]: val };
+    setValues((prev) => ({ ...prev, ...edits }));
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits }, '*');
+  }, []);
+  return [values, setTweak];
+}
+
+// ── TweaksPanel ─────────────────────────────────────────────────────────────
+// Floating shell. Registers the protocol listener BEFORE announcing
+// availability — if the announce ran first, the host's activate could land
+// before our handler exists and the toolbar toggle would silently no-op.
+// The close button posts __edit_mode_dismissed so the host's toolbar toggle
+// flips off in lockstep; the host echoes __deactivate_edit_mode back which
+// is what actually hides the panel.
+function TweaksPanel({ title = 'Tweaks', children }) {
+  const [open, setOpen] = React.useState(false);
+  const dragRef = React.useRef(null);
+  const offsetRef = React.useRef({ x: 16, y: 16 });
+  const PAD = 16;
+
+  const clampToViewport = React.useCallback(() => {
+    const panel = dragRef.current;
+    if (!panel) return;
+    const w = panel.offsetWidth, h = panel.offsetHeight;
+    const maxRight = Math.max(PAD, window.innerWidth - w - PAD);
+    const maxBottom = Math.max(PAD, window.innerHeight - h - PAD);
+    offsetRef.current = {
+      x: Math.min(maxRight, Math.max(PAD, offsetRef.current.x)),
+      y: Math.min(maxBottom, Math.max(PAD, offsetRef.current.y)),
+    };
+    panel.style.right = offsetRef.current.x + 'px';
+    panel.style.bottom = offsetRef.current.y + 'px';
+  }, []);
+
+  React.useEffect(() => {
+    if (!open) return;
+    clampToViewport();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', clampToViewport);
+      return () => window.removeEventListener('resize', clampToViewport);
+    }
+    const ro = new ResizeObserver(clampToViewport);
+    ro.observe(document.documentElement);
+    return () => ro.disconnect();
+  }, [open, clampToViewport]);
+
+  React.useEffect(() => {
+    const onMsg = (e) => {
+      const t = e?.data?.type;
+      if (t === '__activate_edit_mode') setOpen(true);
+      else if (t === '__deactivate_edit_mode') setOpen(false);
+    };
+    window.addEventListener('message', onMsg);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+
+  const dismiss = () => {
+    setOpen(false);
+    window.parent.postMessage({ type: '__edit_mode_dismissed' }, '*');
+  };
+
+  const onDragStart = (e) => {
+    const panel = dragRef.current;
+    if (!panel) return;
+    const r = panel.getBoundingClientRect();
+    const sx = e.clientX, sy = e.clientY;
+    const startRight = window.innerWidth - r.right;
+    const startBottom = window.innerHeight - r.bottom;
+    const move = (ev) => {
+      offsetRef.current = {
+        x: startRight - (ev.clientX - sx),
+        y: startBottom - (ev.clientY - sy),
+      };
+      clampToViewport();
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+
+  if (!open) return null;
+  return (
+    <>
+      <style>{__TWEAKS_STYLE}</style>
+      <div ref={dragRef} className="twk-panel" data-noncommentable=""
+           style={{ right: offsetRef.current.x, bottom: offsetRef.current.y }}>
+        <div className="twk-hd" onMouseDown={onDragStart}>
+          <b>{title}</b>
+          <button className="twk-x" aria-label="Close tweaks"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={dismiss}>✕</button>
+        </div>
+        <div className="twk-body">{children}</div>
+      </div>
+    </>
+  );
+}
+
+// ── Layout helpers ──────────────────────────────────────────────────────────
+
+function TweakSection({ label, children }) {
+  return (
+    <>
+      <div className="twk-sect">{label}</div>
+      {children}
+    </>
+  );
+}
+
+function TweakRow({ label, value, children, inline = false }) {
+  return (
+    <div className={inline ? 'twk-row twk-row-h' : 'twk-row'}>
+      <div className="twk-lbl">
+        <span>{label}</span>
+        {value != null && <span className="twk-val">{value}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ── Controls ────────────────────────────────────────────────────────────────
+
+function TweakSlider({ label, value, min = 0, max = 100, step = 1, unit = '', onChange }) {
+  return (
+    <TweakRow label={label} value={`${value}${unit}`}>
+      <input type="range" className="twk-slider" min={min} max={max} step={step}
+             value={value} onChange={(e) => onChange(Number(e.target.value))} />
+    </TweakRow>
+  );
+}
+
+function TweakToggle({ label, value, onChange }) {
+  return (
+    <div className="twk-row twk-row-h">
+      <div className="twk-lbl"><span>{label}</span></div>
+      <button type="button" className="twk-toggle" data-on={value ? '1' : '0'}
+              role="switch" aria-checked={!!value}
+              onClick={() => onChange(!value)}><i /></button>
+    </div>
+  );
+}
+
+function TweakRadio({ label, value, options, onChange }) {
+  const trackRef = React.useRef(null);
+  const [dragging, setDragging] = React.useState(false);
+  const opts = options.map((o) => (typeof o === 'object' ? o : { value: o, label: o }));
+  const idx = Math.max(0, opts.findIndex((o) => o.value === value));
+  const n = opts.length;
+
+  // The active value is read by pointer-move handlers attached for the lifetime
+  // of a drag — ref it so a stale closure doesn't fire onChange for every move.
+  const valueRef = React.useRef(value);
+  valueRef.current = value;
+
+  const segAt = (clientX) => {
+    const r = trackRef.current.getBoundingClientRect();
+    const inner = r.width - 4;
+    const i = Math.floor(((clientX - r.left - 2) / inner) * n);
+    return opts[Math.max(0, Math.min(n - 1, i))].value;
+  };
+
+  const onPointerDown = (e) => {
+    setDragging(true);
+    const v0 = segAt(e.clientX);
+    if (v0 !== valueRef.current) onChange(v0);
+    const move = (ev) => {
+      if (!trackRef.current) return;
+      const v = segAt(ev.clientX);
+      if (v !== valueRef.current) onChange(v);
+    };
+    const up = () => {
+      setDragging(false);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
+  return (
+    <TweakRow label={label}>
+      <div ref={trackRef} role="radiogroup" onPointerDown={onPointerDown}
+           className={dragging ? 'twk-seg dragging' : 'twk-seg'}>
+        <div className="twk-seg-thumb"
+             style={{ left: `calc(2px + ${idx} * (100% - 4px) / ${n})`,
+                      width: `calc((100% - 4px) / ${n})` }} />
+        {opts.map((o) => (
+          <button key={o.value} type="button" role="radio" aria-checked={o.value === value}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </TweakRow>
+  );
+}
+
+function TweakSelect({ label, value, options, onChange }) {
+  return (
+    <TweakRow label={label}>
+      <select className="twk-field" value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map((o) => {
+          const v = typeof o === 'object' ? o.value : o;
+          const l = typeof o === 'object' ? o.label : o;
+          return <option key={v} value={v}>{l}</option>;
+        })}
+      </select>
+    </TweakRow>
+  );
+}
+
+function TweakText({ label, value, placeholder, onChange }) {
+  return (
+    <TweakRow label={label}>
+      <input className="twk-field" type="text" value={value} placeholder={placeholder}
+             onChange={(e) => onChange(e.target.value)} />
+    </TweakRow>
+  );
+}
+
+function TweakNumber({ label, value, min, max, step = 1, unit = '', onChange }) {
+  const clamp = (n) => {
+    if (min != null && n < min) return min;
+    if (max != null && n > max) return max;
+    return n;
+  };
+  const startRef = React.useRef({ x: 0, val: 0 });
+  const onScrubStart = (e) => {
+    e.preventDefault();
+    startRef.current = { x: e.clientX, val: value };
+    const decimals = (String(step).split('.')[1] || '').length;
+    const move = (ev) => {
+      const dx = ev.clientX - startRef.current.x;
+      const raw = startRef.current.val + dx * step;
+      const snapped = Math.round(raw / step) * step;
+      onChange(clamp(Number(snapped.toFixed(decimals))));
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+  return (
+    <div className="twk-num">
+      <span className="twk-num-lbl" onPointerDown={onScrubStart}>{label}</span>
+      <input type="number" value={value} min={min} max={max} step={step}
+             onChange={(e) => onChange(clamp(Number(e.target.value)))} />
+      {unit && <span className="twk-num-unit">{unit}</span>}
+    </div>
+  );
+}
+
+function TweakColor({ label, value, onChange }) {
+  return (
+    <div className="twk-row twk-row-h">
+      <div className="twk-lbl"><span>{label}</span></div>
+      <input type="color" className="twk-swatch" value={value}
+             onChange={(e) => onChange(e.target.value)} />
+    </div>
+  );
+}
+
+function TweakButton({ label, onClick, secondary = false }) {
+  return (
+    <button type="button" className={secondary ? 'twk-btn secondary' : 'twk-btn'}
+            onClick={onClick}>{label}</button>
+  );
+}
+
+Object.assign(window, {
+  useTweaks, TweaksPanel, TweakSection, TweakRow,
+  TweakSlider, TweakToggle, TweakRadio, TweakSelect,
+  TweakText, TweakNumber, TweakColor, TweakButton,
+});
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        

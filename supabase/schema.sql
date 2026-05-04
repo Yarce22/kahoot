@@ -17,7 +17,7 @@ CREATE TABLE questions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   quiz_id UUID NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
   text TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('open', 'closed')),
+  type TEXT NOT NULL CHECK (type IN ('open', 'closed', 'true_false')),
   time_limit_seconds INT NOT NULL DEFAULT 30 CHECK (time_limit_seconds BETWEEN 5 AND 120),
   order_index INT NOT NULL DEFAULT 0
 );
@@ -56,7 +56,7 @@ CREATE TABLE players (
 CREATE TABLE player_answers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   player_id UUID NOT NULL REFERENCES players(id) ON DELETE CASCADE,
-  question_id UUID NOT NULL REFERENCES questions(id),
+  question_id UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
   answer_text TEXT,                   -- open questions
   selected_option_id UUID REFERENCES answer_options(id),  -- closed questions
   answered_at TIMESTAMPTZ DEFAULT now(),

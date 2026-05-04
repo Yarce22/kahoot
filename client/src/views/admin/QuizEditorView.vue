@@ -1,145 +1,274 @@
 <template>
-  <div class="quiz-editor">
-    <h1>{{ isNew ? 'New Quiz' : 'Edit Quiz' }}</h1>
+  <div class="quiz-editor-view view-transition-enter">
 
-    <form @submit.prevent="saveQuiz" class="quiz-form">
-      <label>
-        Title
-        <input v-model="form.title" required placeholder="Quiz title" />
-      </label>
-      <label>
-        Description
-        <input v-model="form.description" placeholder="Optional description" />
-      </label>
-      <button type="submit" :disabled="saving">{{ saving ? 'Saving…' : 'Save Quiz' }}</button>
-      <p v-if="quizError" class="error">{{ quizError }}</p>
-    </form>
+    <!-- Header -->
+    <div class="editor-header">
+      <button class="btn btn-ghost btn-sm" @click="router.back()">← Volver</button>
+      <h1 class="nunito" style="font-weight: 900; font-size: 24px; color: var(--text-primary); flex: 1;">
+        {{ isNew ? 'Nuevo Cuestionario' : 'Editar Cuestionario' }}
+      </h1>
+    </div>
+
+    <!-- Quiz metadata -->
+    <div class="card quiz-meta-panel">
+      <form @submit.prevent="saveQuiz" class="meta-fields">
+        <div class="field-group">
+          <label class="field-label-sm" for="quiz-title">Título</label>
+          <input
+            id="quiz-title"
+            v-model="form.title"
+            class="input-sm"
+            required
+            placeholder="Título del cuestionario"
+          />
+        </div>
+        <div class="field-group">
+          <label class="field-label-sm" for="quiz-desc">Descripción</label>
+          <input
+            id="quiz-desc"
+            v-model="form.description"
+            class="input-sm"
+            placeholder="Descripción opcional"
+          />
+        </div>
+        <div style="grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <button type="submit" class="btn btn-primary btn-sm" :disabled="saving">
+            {{ saving ? 'Guardando…' : 'Guardar cuestionario' }}
+          </button>
+          <p v-if="quizError" class="error-msg" style="margin: 0;">{{ quizError }}</p>
+        </div>
+      </form>
+    </div>
 
     <template v-if="quizId">
-      <h2>Questions</h2>
-      <p v-if="store.loading">Loading…</p>
+      <!-- Questions list -->
+      <h2 class="nunito" style="font-size: 20px; font-weight: 800; color: var(--text-primary); margin-bottom: 12px;">
+        Preguntas
+      </h2>
+      <p v-if="store.loading" style="color: var(--text-secondary);">Cargando…</p>
 
-      <div v-for="(q, qi) in questions" :key="q.id" class="question-card">
-        <template v-if="editingQuestionId !== q.id">
-          <p>
-            <strong>{{ qi + 1 }}. {{ q.text }}</strong>
-            <span class="badge">{{ q.type }}</span>
-            <span class="badge">{{ q.time_limit_seconds }}s</span>
-          </p>
-          <button @click="startEditQuestion(q)">Edit</button>
-          <button @click="removeQuestion(q.id)">Delete</button>
+      <div class="question-cards">
+        <div
+          v-for="(q, qi) in questions"
+          :key="q.id"
+          class="card q-card"
+        >
+          <template v-if="editingQuestionId !== q.id">
+            <div class="q-index">{{ qi + 1 }}</div>
+            <div class="q-content">
+              <p class="q-text">{{ q.text }}</p>
+              <div class="q-actions">
+                <span :class="['badge', typeBadgeClass(q.type)]">{{ typeLabel(q.type) }}</span>
+                <span class="badge badge-orange">{{ q.time_limit_seconds }}s</span>
+              </div>
 
-          <ul v-if="q.type === 'closed'" class="options">
-            <li v-for="opt in (q.options || [])" :key="opt.id">
-              <input
-                type="checkbox"
-                :checked="opt.is_correct"
-                @change="toggleOption(opt, q.id)"
-              />
-              {{ opt.text }}
-              <button @click="removeOption(opt.id, q.id)">✕</button>
-            </li>
-            <li>
-              <form @submit.prevent="addOption(q)">
-                <input v-model="newOptionText[q.id]" placeholder="New option" />
-                <button type="submit">Add</button>
-              </form>
-            </li>
-          </ul>
-        </template>
+              <!-- Options for closed questions -->
+              <ul v-if="q.type === 'closed'" class="options-list">
+                <li v-for="opt in (q.options || [])" :key="opt.id" class="option-row">
+                  <input
+                    type="checkbox"
+                    :checked="opt.is_correct"
+                    @change="toggleOption(opt, q.id)"
+                  />
+                  <span :style="opt.is_correct ? 'color: var(--accent-green); font-weight: 700;' : ''">{{ opt.text }}</span>
+                  <button class="btn-icon btn-delete" style="padding: 4px 8px; font-size: 12px;" @click="removeOption(opt.id, q.id)">✕</button>
+                </li>
+                <li>
+                  <form @submit.prevent="addOption(q)" style="display: flex; gap: 8px; margin-top: 8px;">
+                    <input v-model="newOptionText[q.id]" class="input-sm" style="flex: 1;" placeholder="Nueva opción" />
+                    <button type="submit" class="btn-icon btn-edit">+ Agregar</button>
+                  </form>
+                </li>
+              </ul>
 
-        <template v-else>
-          <form @submit.prevent="saveQuestion(q.id)" class="inline-form">
-            <input v-model="editQuestionForm.text" placeholder="Question text" required />
-            <select v-model="editQuestionForm.type">
-              <option value="closed">Closed</option>
-              <option value="open">Open</option>
-            </select>
-            <input
-              type="number"
-              v-model.number="editQuestionForm.time_limit_seconds"
-              min="5"
-              max="120"
-            />
-            <button type="submit">Save</button>
-            <button type="button" @click="editingQuestionId = null">Cancel</button>
-          </form>
-        </template>
+              <p v-else-if="q.type === 'true_false'" class="correct-answer-note">
+                Correcto: <strong>{{ (q.options || []).find(o => o.is_correct)?.text ?? '—' }}</strong>
+              </p>
+              <p v-else-if="q.type === 'open'" class="correct-answer-note">
+                Respuesta correcta: <strong>{{ (q.options || []).find(o => o.is_correct)?.text ?? '—' }}</strong>
+              </p>
+
+              <!-- Question actions -->
+              <div style="display: flex; gap: 8px; margin-top: 12px;">
+                <button class="btn-icon btn-edit" @click="startEditQuestion(q)">✏ Editar</button>
+                <button class="btn-icon btn-delete" @click="removeQuestion(q.id)">🗑 Eliminar</button>
+              </div>
+            </div>
+          </template>
+
+          <!-- Inline edit form -->
+          <template v-else>
+            <form @submit.prevent="saveQuestion(q.id)" style="width: 100%;">
+              <div class="meta-fields" style="margin-bottom: 12px;">
+                <div class="field-group">
+                  <label class="field-label-sm">Texto de la pregunta</label>
+                  <input v-model="editQuestionForm.text" class="input-sm" placeholder="Texto de la pregunta" required />
+                </div>
+                <div class="field-group">
+                  <label class="field-label-sm">Tipo</label>
+                  <select v-model="editQuestionForm.type" class="input-sm">
+                    <option value="closed">Opción múltiple</option>
+                    <option value="true_false">Verdadero / Falso</option>
+                    <option value="open">Respuesta abierta</option>
+                  </select>
+                </div>
+                <div class="field-group">
+                  <label class="field-label-sm">Límite de tiempo (seg)</label>
+                  <input v-model.number="editQuestionForm.time_limit_seconds" class="input-sm" type="number" min="5" max="120" />
+                </div>
+
+                <template v-if="editQuestionForm.type === 'true_false'">
+                  <div class="field-group" style="grid-column: 1 / -1;">
+                    <label class="field-label-sm">Respuesta correcta</label>
+                    <div style="display: flex; gap: 16px;">
+                      <label style="display: flex; align-items: center; gap: 6px; color: var(--text-primary); font-family: 'Nunito', sans-serif; font-weight: 700;">
+                        <input type="radio" v-model="editTfCorrect" value="true" /> Verdadero
+                      </label>
+                      <label style="display: flex; align-items: center; gap: 6px; color: var(--text-primary); font-family: 'Nunito', sans-serif; font-weight: 700;">
+                        <input type="radio" v-model="editTfCorrect" value="false" /> Falso
+                      </label>
+                    </div>
+                  </div>
+                </template>
+
+                <template v-else-if="editQuestionForm.type === 'open'">
+                  <div class="field-group" style="grid-column: 1 / -1;">
+                    <label class="field-label-sm">Respuesta correcta</label>
+                    <input v-model="editOpenCorrect" class="input-sm" placeholder="Respuesta correcta" required />
+                  </div>
+                </template>
+              </div>
+
+              <div style="display: flex; gap: 8px;">
+                <button type="submit" class="btn-icon btn-host">✓ Guardar</button>
+                <button type="button" class="btn-icon btn-delete" @click="editingQuestionId = null">✕ Cancelar</button>
+              </div>
+            </form>
+          </template>
+        </div>
       </div>
 
-      <div class="add-question">
-        <h3>Add Question</h3>
-        <form @submit.prevent="addQuestion">
-          <input v-model="newQuestion.text" placeholder="Question text" required />
-          <select v-model="newQuestion.type">
-            <option value="closed">Multiple choice</option>
-            <option value="true_false">True / False</option>
-            <option value="open">Open answer</option>
-          </select>
-          <input
-            type="number"
-            v-model.number="newQuestion.time_limit_seconds"
-            min="5"
-            max="120"
-          />
+      <!-- Add question panel -->
+      <div class="card add-question-panel">
+        <h3 class="add-q-title">Agregar Pregunta</h3>
 
-          <!-- Multiple choice options -->
+        <!-- Question type selector -->
+        <div class="type-select">
+          <button
+            type="button"
+            :class="['type-btn', newQuestion.type === 'closed' ? 'active-blue' : '']"
+            @click="newQuestion.type = 'closed'"
+          >Opción múltiple</button>
+          <button
+            type="button"
+            :class="['type-btn', newQuestion.type === 'true_false' ? 'active-green' : '']"
+            @click="newQuestion.type = 'true_false'"
+          >Verdadero / Falso</button>
+          <button
+            type="button"
+            :class="['type-btn', newQuestion.type === 'open' ? 'active-orange' : '']"
+            @click="newQuestion.type = 'open'"
+          >Respuesta abierta</button>
+        </div>
+
+        <form @submit.prevent="addQuestion">
+          <div class="meta-fields" style="margin-bottom: 16px;">
+            <div class="field-group" style="grid-column: 1 / -1;">
+              <label class="field-label-sm">Texto de la pregunta</label>
+              <input v-model="newQuestion.text" class="input-sm" placeholder="¿Cuál es la pregunta?" required />
+            </div>
+            <div class="field-group">
+              <label class="field-label-sm">Tiempo límite (seg)</label>
+              <input v-model.number="newQuestion.time_limit_seconds" class="input-sm" type="number" min="5" max="120" />
+            </div>
+          </div>
+
+          <!-- Closed: draft options -->
           <template v-if="newQuestion.type === 'closed'">
-            <div class="draft-options">
-              <div v-for="(opt, idx) in newOptions" :key="idx" class="draft-option">
+            <div style="margin-bottom: 12px;">
+              <label class="field-label-sm" style="margin-bottom: 8px; display: block;">Opciones de respuesta</label>
+              <div v-for="(opt, idx) in newOptions" :key="idx" class="option-row" style="margin-bottom: 6px;">
                 <input
                   type="radio"
                   :checked="opt.is_correct"
                   @change="setCorrectOption(idx)"
                   name="new-correct-option"
                 />
-                <span>{{ opt.text }}</span>
-                <button type="button" @click="removeNewOption(idx)">✕</button>
+                <span :style="opt.is_correct ? 'color: var(--accent-green); font-weight: 700;' : 'color: var(--text-primary);'">{{ opt.text }}</span>
+                <button type="button" class="btn-icon btn-delete" style="padding: 4px 8px; font-size: 12px;" @click="removeNewOption(idx)">✕</button>
               </div>
-              <div class="add-option-inline">
-                <input v-model="newOptionInput" placeholder="Option text" @keydown.enter.prevent="addNewOption" />
-                <button type="button" @click="addNewOption">+ Add option</button>
+              <div style="display: flex; gap: 8px; margin-top: 8px;">
+                <input v-model="newOptionInput" class="input-sm" style="flex: 1;" placeholder="Texto de la opción" @keydown.enter.prevent="addNewOption" />
+                <button type="button" class="btn-icon btn-edit" @click="addNewOption">+ Agregar opción</button>
               </div>
-              <p v-if="newOptions.length < 2" class="hint">Add at least 2 options</p>
+              <p v-if="newOptions.length < 2" style="color: var(--text-muted); font-size: 12px; margin-top: 6px; font-family: 'Nunito', sans-serif;">
+                Agregá al menos 2 opciones
+              </p>
             </div>
           </template>
 
-          <!-- True/False correct answer -->
+          <!-- True/False: correct answer -->
           <template v-else-if="newQuestion.type === 'true_false'">
-            <div class="tf-correct">
-              <span>Correct answer:</span>
-              <label><input type="radio" v-model="newTfCorrect" value="true" /> True</label>
-              <label><input type="radio" v-model="newTfCorrect" value="false" /> False</label>
+            <div style="margin-bottom: 12px;">
+              <label class="field-label-sm" style="margin-bottom: 8px; display: block;">Respuesta correcta</label>
+              <div style="display: flex; gap: 16px;">
+                <label style="display: flex; align-items: center; gap: 6px; color: var(--text-primary); font-family: 'Nunito', sans-serif; font-weight: 700;">
+                  <input type="radio" v-model="newTfCorrect" value="true" /> Verdadero
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; color: var(--text-primary); font-family: 'Nunito', sans-serif; font-weight: 700;">
+                  <input type="radio" v-model="newTfCorrect" value="false" /> Falso
+                </label>
+              </div>
             </div>
           </template>
 
-          <!-- Open question correct answer -->
+          <!-- Open: correct answer -->
           <template v-else-if="newQuestion.type === 'open'">
-            <label>
-              Correct answer
+            <div style="margin-bottom: 12px;">
+              <label class="field-label-sm" for="new-open-correct" style="margin-bottom: 8px; display: block;">Respuesta correcta</label>
               <input
+                id="new-open-correct"
                 v-model="newOpenCorrect"
-                placeholder="e.g. Buenos Aires"
+                class="input-sm"
+                placeholder="ej. Buenos Aires"
                 required
               />
-            </label>
-            <p class="hint">Accepts minor typos (up to ~20% of the answer length)</p>
+              <p style="color: var(--text-muted); font-size: 12px; margin-top: 6px; font-family: 'Nunito', sans-serif;">
+                Acepta pequeñas variaciones ortográficas
+              </p>
+            </div>
           </template>
 
-          <button type="submit" :disabled="newQuestion.type === 'closed' && newOptions.length < 2">
-            Add Question
+          <button
+            type="submit"
+            class="btn btn-primary btn-sm"
+            :disabled="newQuestion.type === 'closed' && newOptions.length < 2"
+          >
+            Agregar pregunta
           </button>
         </form>
       </div>
 
-      <div class="session-launcher">
-        <h2>Host a Game</h2>
-        <button @click="createSession" :disabled="creatingSession">
-          {{ creatingSession ? 'Creating…' : 'Create Session' }}
+      <!-- Session launcher -->
+      <div class="card session-launcher-panel">
+        <h2 class="nunito" style="font-weight: 900; font-size: 20px; color: var(--text-primary); margin-bottom: 16px;">
+          Iniciar una Partida
+        </h2>
+        <button class="btn btn-green" @click="createSession" :disabled="creatingSession">
+          {{ creatingSession ? 'Creando sesión…' : '▶ Crear Sesión' }}
         </button>
-        <p v-if="sessionPin" class="pin">
-          PIN: <strong>{{ sessionPin }}</strong>
-          <router-link :to="`/admin/sessions/${sessionPin}`"> → Open Session</router-link>
+        <p v-if="sessionPin" style="margin-top: 16px;">
+          <span style="color: var(--text-secondary); font-family: 'Nunito', sans-serif; font-size: 14px;">PIN generado:</span>
+          <strong style="font-family: 'Nunito', sans-serif; font-weight: 900; font-size: 28px; color: var(--accent-yellow); margin-left: 10px; letter-spacing: 4px;">
+            {{ sessionPin }}
+          </strong>
+          <router-link
+            :to="`/admin/sessions/${sessionPin}`"
+            class="btn btn-primary btn-sm"
+            style="margin-left: 14px; text-decoration: none;"
+          >
+            Abrir Sesión →
+          </router-link>
         </p>
       </div>
     </template>
@@ -174,6 +303,8 @@ const newOptions = ref([])
 const newOptionInput = ref('')
 const newTfCorrect = ref('true')
 const newOpenCorrect = ref('')
+const editTfCorrect = ref('true')
+const editOpenCorrect = ref('')
 const creatingSession = ref(false)
 const sessionPin = ref('')
 
@@ -245,17 +376,23 @@ async function addQuestion() {
 function startEditQuestion(q) {
   editingQuestionId.value = q.id
   editQuestionForm.value = { text: q.text, type: q.type, time_limit_seconds: q.time_limit_seconds }
+  const correctOpt = (q.options || []).find(o => o.is_correct)
+  editTfCorrect.value = q.type === 'true_false' ? (correctOpt?.text?.toLowerCase() ?? 'true') : 'true'
+  editOpenCorrect.value = q.type === 'open' ? (correctOpt?.text ?? '') : ''
 }
 
 async function saveQuestion(id) {
-  const updated = await store.updateQuestion(id, { ...editQuestionForm.value })
-  const idx = questions.value.findIndex(x => x.id === id)
-  if (idx !== -1) Object.assign(questions.value[idx], updated)
+  const payload = { ...editQuestionForm.value }
+  if (payload.type === 'true_false') payload.correct_answer = editTfCorrect.value
+  else if (payload.type === 'open') payload.correct_answer = editOpenCorrect.value.trim()
+  await store.updateQuestion(id, payload)
+  await store.fetchQuiz(quizId.value)
+  questions.value = store.activeQuiz?.questions || []
   editingQuestionId.value = null
 }
 
 async function removeQuestion(id) {
-  if (!confirm('Delete this question?')) return
+  if (!confirm('¿Eliminar esta pregunta?')) return
   await store.deleteQuestion(id)
   questions.value = questions.value.filter(q => q.id !== id)
 }
@@ -291,4 +428,199 @@ async function createSession() {
     creatingSession.value = false
   }
 }
+
+function typeLabel(type) {
+  return type === 'closed' ? 'Múltiple' : type === 'true_false' ? 'V/F' : 'Abierta'
+}
+
+function typeBadgeClass(type) {
+  return type === 'closed' ? 'badge-blue' : type === 'true_false' ? 'badge-green' : 'badge-orange'
+}
 </script>
+
+<style scoped>
+.quiz-editor-view {
+  min-height: 100vh;
+  padding: 24px 24px 80px;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 860px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.editor-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.quiz-meta-panel {
+  padding: 24px;
+}
+
+.meta-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field-label-sm {
+  font-family: 'Nunito', sans-serif;
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+/* Question cards */
+.question-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.q-card {
+  padding: 18px 20px;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  animation: fadeSlideUp 0.3s ease both;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+.q-card:hover { border-color: var(--accent-purple); }
+
+.q-index {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Nunito', sans-serif;
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.q-content { flex: 1; }
+
+.q-text {
+  font-family: 'Nunito', sans-serif;
+  font-weight: 700;
+  font-size: 15px;
+  margin-bottom: 6px;
+  color: var(--text-primary);
+}
+
+.q-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.options-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+}
+
+.option-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  color: var(--text-primary);
+  font-family: 'Nunito', sans-serif;
+  font-size: 14px;
+}
+
+.correct-answer-note {
+  color: var(--text-secondary);
+  font-family: 'Nunito', sans-serif;
+  font-size: 14px;
+  margin-top: 8px;
+}
+
+/* Add question panel */
+.add-question-panel {
+  padding: 22px 24px;
+}
+
+.add-q-title {
+  font-family: 'Nunito', sans-serif;
+  font-weight: 800;
+  font-size: 17px;
+  margin-bottom: 16px;
+  color: var(--text-primary);
+}
+
+.type-select {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.type-btn {
+  padding: 8px 16px;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: 'Nunito', sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.type-btn.active-blue   { border-color: var(--accent-cyan);   color: var(--accent-cyan);   background: rgba(61, 207, 207, 0.1); }
+.type-btn.active-green  { border-color: var(--accent-green);  color: var(--accent-green);  background: rgba(70, 217, 138, 0.1); }
+.type-btn.active-orange { border-color: var(--accent-yellow); color: var(--accent-yellow); background: rgba(245, 200, 66, 0.1); }
+
+/* Action icon buttons */
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  font-family: 'Nunito', sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+.btn-icon:hover { filter: brightness(1.15); transform: translateY(-1px); }
+
+.btn-host   { background: rgba(155, 114, 245, 0.2); color: var(--accent-purple); border: 1px solid rgba(155, 114, 245, 0.3); }
+.btn-edit   { background: rgba(61, 207, 207, 0.15);  color: var(--accent-cyan);   border: 1px solid rgba(61, 207, 207, 0.25); }
+.btn-delete { background: rgba(244, 99, 74, 0.15);   color: var(--accent-coral);  border: 1px solid rgba(244, 99, 74, 0.25); }
+
+/* Session launcher */
+.session-launcher-panel {
+  padding: 24px;
+}
+
+@media (max-width: 600px) {
+  .meta-fields { grid-template-columns: 1fr; }
+}
+</style>

@@ -8,7 +8,8 @@ export function useSocket() {
     if (!socket || !socket.connected) {
       socket = io(import.meta.env.VITE_API_BASE_URL || undefined, {
         auth,
-        autoConnect: true
+        autoConnect: true,
+        transports: ['websocket', 'polling']
       })
     }
     return socket

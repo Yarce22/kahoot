@@ -91,12 +91,12 @@ questionsRouter.post('/quizzes/:id/questions', requireAdmin, async (req, res, ne
 // PUT /api/questions/:id
 questionsRouter.put('/questions/:id', requireAdmin, async (req, res, next) => {
   const { id } = req.params
-  const { text, type, time_limit_seconds, order_index, options } = req.body
+  const { text, type, time_limit_seconds, order_index, options, correct_answer } = req.body
 
   const updates = {}
   if (text !== undefined) updates.text = text
   if (type !== undefined) {
-    if (!VALID_TYPES.includes(type)) return next(httpError(400, "type must be 'open' or 'closed'"))
+    if (!VALID_TYPES.includes(type)) return next(httpError(400, "type must be 'open', 'closed', or 'true_false'"))
     updates.type = type
   }
   if (time_limit_seconds !== undefined) {
@@ -138,12 +138,38 @@ questionsRouter.put('/questions/:id', requireAdmin, async (req, res, next) => {
     if (insertError) return next(insertError)
   }
 
+  if (effectiveType === 'true_false' && correct_answer !== undefined) {
+    if (!['true', 'false'].includes(correct_answer)) {
+      return next(httpError(422, "true_false questions require correct_answer: 'true' or 'false'"))
+    }
+    await supabase.from('answer_options').delete().eq('question_id', id)
+    const { error: insertError } = await supabase.from('answer_options').insert([
+      { question_id: id, text: 'True', is_correct: correct_answer === 'true' },
+      { question_id: id, text: 'False', is_correct: correct_answer === 'false' }
+    ])
+    if (insertError) return next(insertError)
+  }
+
+  if (effectiveType === 'open' && correct_answer !== undefined) {
+    if (!correct_answer?.trim()) {
+      return next(httpError(422, 'open questions require a correct_answer'))
+    }
+    await supabase.from('answer_options').delete().eq('question_id', id)
+    const { error: insertError } = await supabase.from('answer_options').insert([
+      { question_id: id, text: correct_answer.trim(), is_correct: true }
+    ])
+    if (insertError) return next(insertError)
+  }
+
   res.json(question)
 })
 
 // DELETE /api/questions/:id
 questionsRouter.delete('/questions/:id', requireAdmin, async (req, res, next) => {
   const { id } = req.params
+
+  // player_answers FK has no CASCADE in the DB — delete manually first
+  await supabase.from('player_answers').delete().eq('question_id', id)
 
   const { error } = await supabase
     .from('questions')
