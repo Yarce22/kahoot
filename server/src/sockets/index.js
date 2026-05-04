@@ -101,7 +101,9 @@ async function handleJoinGame(socket, io, data, ack) {
     playerCount: game.players.size
   })
 
-  ack?.({ playerId: player.id, sessionId: game.sessionId })
+  // Return full current player list so the joining client can populate its lobby
+  const players = [...game.players.values()].map(p => ({ nickname: p.nickname }))
+  ack?.({ playerId: player.id, sessionId: game.sessionId, players })
 }
 
 // ─── PLAYER: submit-answer ────────────────────────────────────────────────────

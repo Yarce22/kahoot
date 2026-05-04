@@ -65,7 +65,11 @@ export async function endQuestion(pin) {
     }
   }
 
-  io.to(`session:${pin}`).emit('question-end', { correctOptionId, answerStats })
+  const correctAnswerText = question.type === 'open'
+    ? question.options?.find(o => o.is_correct)?.text ?? null
+    : null
+
+  io.to(`session:${pin}`).emit('question-end', { correctOptionId, correctAnswerText, answerStats })
 
   // Emit interim leaderboard
   const leaderboard = buildLeaderboard(game)

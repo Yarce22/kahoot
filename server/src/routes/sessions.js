@@ -5,6 +5,7 @@ import { httpError } from '../lib/httpError.js'
 import supabase from '../lib/supabase.js'
 import { activeGames } from '../runtime/activeGames.js'
 import { getIO } from '../lib/io.js'
+import { startQuestion } from '../domain/gameEngine.js'
 
 export const sessionsRouter = Router()
 
@@ -110,11 +111,13 @@ sessionsRouter.post('/:pin/start', requireAdmin, async (req, res, next) => {
     .update({ status: 'active', started_at: new Date().toISOString() })
     .eq('pin', pin)
 
-  // Update memory
+  // Update memory and set index to 0 so startQuestion reads the first question
   game.questions = questions
+  game.currentQuestionIndex = 0
 
-  // Notify all clients in the session room
+  // Notify all clients, then immediately broadcast the first question
   getIO().to(`session:${pin}`).emit('game-started', { totalQuestions: questions.length })
+  startQuestion(pin)
 
   res.json({ ok: true, totalQuestions: questions.length })
 })
@@ -130,20 +133,31 @@ sessionsRouter.get('/:pin/results', requireAdmin, async (req, res, next) => {
     .single()
   if (sessionErr || !session) return next(httpError(404, 'Session not found'))
 
+  // Fetch player IDs for this session first, then filter answers
+  const { data: sessionPlayers } = await supabase
+    .from('players')
+    .select('id')
+    .eq('session_id', session.id)
+
+  const playerIds = (sessionPlayers ?? []).map(p => p.id)
+
+  if (!playerIds.length) {
+    return res.json({ sessionId: session.id, status: session.status, results: [] })
+  }
+
   const { data: results, error } = await supabase
     .from('player_answers')
     .select(`
       id,
       answer_text,
-      selected_option_id,
-      answered_at,
-      time_taken_ms,
       is_correct,
+      time_taken_ms,
       player:players(id, nickname),
-      question:questions(id, text, type)
+      question:questions(id, text, type, order_index),
+      selected_option:answer_options(text)
     `)
-    .eq('players.session_id', session.id)
-    .not('player', 'is', null)
+    .in('player_id', playerIds)
+    .order('player_id')
 
   if (error) return next(httpError(500, 'Failed to fetch results'))
 

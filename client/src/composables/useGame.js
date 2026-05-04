@@ -42,7 +42,7 @@ export function useGame(pin) {
     socket.on('question-end', (reveal) => {
       store.lastReveal = reveal
       store.phase = 'reveal'
-      router.push(`/results/${pin}`)
+      router.push(`/leaderboard/${pin}`)
     })
 
     socket.on('show-leaderboard', ({ entries }) => {
@@ -52,7 +52,7 @@ export function useGame(pin) {
     socket.on('game-end', ({ leaderboard }) => {
       store.leaderboard = leaderboard
       store.phase = 'ended'
-      router.push(`/leaderboard/${pin}`)
+      router.push(`/results/${pin}`)
     })
 
     socket.on('error', ({ code, message }) => {

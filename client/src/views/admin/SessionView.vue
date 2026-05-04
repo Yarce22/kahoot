@@ -3,9 +3,14 @@
 
     <!-- Header -->
     <div class="session-header">
-      <h1 class="nunito" style="font-weight: 900; font-size: 24px; color: var(--text-primary);">
-        Panel del Host
-      </h1>
+      <div style="display: flex; align-items: center; gap: 14px;">
+        <router-link to="/admin/quizzes" class="btn btn-ghost" style="font-size: 14px; padding: 8px 14px;">
+          ← Mis quizzes
+        </router-link>
+        <h1 class="nunito" style="font-weight: 900; font-size: 24px; color: var(--text-primary);">
+          Panel del Host
+        </h1>
+      </div>
       <div class="host-controls">
         <template v-if="phase === 'lobby'">
           <button class="btn btn-green" @click="startGame" :disabled="starting">
@@ -60,11 +65,67 @@
       <div v-if="phase === 'active'" class="card question-progress-card">
         <div class="progress-info">
           <p class="nunito" style="font-weight: 800; font-size: 16px; color: var(--text-primary);">
-            Pregunta {{ currentIndex + 1 }}
+            {{ currentQuestion ? `Pregunta ${currentIndex + 1}` : 'Iniciando…' }}
           </p>
         </div>
         <p v-if="currentQuestion" style="color: var(--text-secondary); font-family: 'Nunito', sans-serif; font-size: 15px; font-weight: 700; font-style: italic;">
           "{{ currentQuestion.text }}"
+        </p>
+      </div>
+
+      <!-- Detailed results card (post-game) -->
+      <div v-if="phase === 'ended'" class="card" style="padding: 24px; grid-column: 1 / -1;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+          <h2 class="nunito" style="font-weight: 900; font-size: 20px; color: var(--text-primary);">
+            📋 Respuestas por jugador
+          </h2>
+          <button
+            class="btn btn-primary"
+            style="font-size: 14px; padding: 8px 16px;"
+            @click="loadResults"
+            :disabled="loadingResults"
+          >
+            {{ loadingResults ? 'Cargando…' : resultsLoaded ? 'Actualizar' : 'Ver respuestas' }}
+          </button>
+        </div>
+
+        <div v-if="resultsLoaded && groupedResults.length" style="display: flex; flex-direction: column; gap: 20px;">
+          <div
+            v-for="player in groupedResults"
+            :key="player.nickname"
+            style="background: var(--bg-elevated); border-radius: var(--radius-lg); padding: 16px;"
+          >
+            <p class="nunito" style="font-weight: 800; font-size: 16px; color: var(--text-primary); margin-bottom: 10px;">
+              {{ player.nickname }}
+            </p>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <div
+                v-for="ans in player.answers"
+                :key="ans.questionText"
+                :style="{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '10px',
+                  padding: '10px 12px',
+                  borderRadius: 'var(--radius-md)',
+                  background: ans.is_correct ? 'rgba(70,217,138,0.1)' : ans.is_correct === false ? 'rgba(255,90,90,0.1)' : 'var(--bg-card)',
+                  border: '1px solid ' + (ans.is_correct ? 'rgba(70,217,138,0.3)' : ans.is_correct === false ? 'rgba(255,90,90,0.3)' : 'var(--border)')
+                }"
+              >
+                <span style="font-size: 16px; flex-shrink: 0;">{{ ans.is_correct ? '✅' : ans.is_correct === false ? '❌' : '—' }}</span>
+                <div>
+                  <p style="font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 13px; color: var(--text-secondary); margin-bottom: 2px;">{{ ans.questionText }}</p>
+                  <p style="font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 14px; color: var(--text-primary);">
+                    {{ ans.answer || '(sin respuesta)' }}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <p v-else-if="resultsLoaded && !groupedResults.length" style="color: var(--text-muted); font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 14px; text-align: center; padding: 20px 0;">
+          No hay respuestas registradas.
         </p>
       </div>
 
@@ -112,6 +173,9 @@ const currentQuestion = ref(null)
 const finalLeaderboard = ref([])
 const starting = ref(false)
 const errorMsg = ref('')
+const loadingResults = ref(false)
+const resultsLoaded = ref(false)
+const groupedResults = ref([])
 
 function initSession(currentPin) {
   players.value = []
@@ -198,6 +262,34 @@ function next() {
 
 function end() {
   getSocket()?.emit('host:end-game', { pin: pin.value })
+}
+
+async function loadResults() {
+  loadingResults.value = true
+  try {
+    const data = await api.get(`/api/sessions/${pin.value}/results`)
+    const byPlayer = {}
+    for (const r of data.results ?? []) {
+      const name = r.player?.nickname ?? 'Desconocido'
+      if (!byPlayer[name]) byPlayer[name] = { nickname: name, answers: [] }
+      const answerText = r.answer_text || r.selected_option?.text || null
+      byPlayer[name].answers.push({
+        questionText: r.question?.text ?? '',
+        order: r.question?.order_index ?? 0,
+        answer: answerText,
+        is_correct: r.is_correct
+      })
+    }
+    for (const p of Object.values(byPlayer)) {
+      p.answers.sort((a, b) => a.order - b.order)
+    }
+    groupedResults.value = Object.values(byPlayer)
+    resultsLoaded.value = true
+  } catch (e) {
+    errorMsg.value = `Error cargando resultados: ${e.message}`
+  } finally {
+    loadingResults.value = false
+  }
 }
 
 function rankClass(i) {

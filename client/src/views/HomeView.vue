@@ -105,6 +105,7 @@ async function joinGame() {
     store.playerId = ack.playerId
     store.sessionId = ack.sessionId
     store.nickname = nickname.value
+    store.players = ack.players || []
     store.phase = 'lobby'
     router.push(`/lobby/${pin.value}`)
   })

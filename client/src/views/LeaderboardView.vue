@@ -8,9 +8,17 @@
       role="status"
       aria-live="polite"
     >
-      <p v-if="store.lastReveal.correctOptionId" class="correct-answer-label">Respuesta correcta</p>
-      <p v-if="store.lastReveal.correctOptionId" class="correct-answer-text">{{ correctOptionText }}</p>
-      <p v-else class="correct-answer-text" style="font-size: 16px;">Pregunta abierta — sin puntuación automática</p>
+      <template v-if="store.lastReveal.correctOptionId">
+        <p class="correct-answer-label">Respuesta correcta</p>
+        <p class="correct-answer-text">{{ correctOptionText }}</p>
+      </template>
+      <template v-else-if="store.lastReveal.correctAnswerText">
+        <p class="correct-answer-label">Respuesta esperada</p>
+        <p class="correct-answer-text">{{ store.lastReveal.correctAnswerText }}</p>
+      </template>
+      <template v-else>
+        <p class="correct-answer-text" style="font-size: 16px;">Pregunta abierta</p>
+      </template>
     </div>
 
     <!-- Leaderboard -->
