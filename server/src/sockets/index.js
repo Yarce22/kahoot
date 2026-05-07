@@ -19,6 +19,7 @@ function fuzzyMatch(submitted, correct) {
   return levenshtein(s, c) <= threshold
 }
 import supabase from '../lib/supabase.js'
+import { getIO } from '../lib/io.js'
 import { activeGames } from '../runtime/activeGames.js'
 import { startQuestion, endQuestion, endGame } from '../domain/gameEngine.js'
 import { hostAuthMiddleware } from './hostAuth.js'
@@ -140,18 +141,19 @@ async function handleSubmitAnswer(socket, data, ack) {
     const option = question.options.find(o => o.id === answerId)
     isCorrect = option?.is_correct ?? false
     selectedOptionId = answerId
-    if (isCorrect) {
-      player.score += 1
-      player.totalTimeMs += timeTakenMs
-    }
   } else if (question.type === 'open' && answerText) {
     const correctOption = question.options?.find(o => o.is_correct)
     if (correctOption) {
       isCorrect = fuzzyMatch(answerText, correctOption.text)
-      if (isCorrect) {
-        player.score += 1
-        player.totalTimeMs += timeTakenMs
-      }
+    }
+  }
+
+  if (isCorrect) {
+    player.score += 1
+    player.totalTimeMs += timeTakenMs
+    if (!game.firstCorrectAnswered) {
+      game.firstCorrectAnswered = true
+      player.score += 1
     }
   }
 
@@ -171,6 +173,9 @@ async function handleSubmitAnswer(socket, data, ack) {
     game.answerCounts.set(answerId, (game.answerCounts.get(answerId) ?? 0) + 1)
   }
   game.answersReceived.add(player.playerId)
+
+  getIO().to(`session:${pin}`).emit('player-answered', { nickname: player.nickname })
+
   ack?.({ received: true })
 
   // Auto-end question if all players answered

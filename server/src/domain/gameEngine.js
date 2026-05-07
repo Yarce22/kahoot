@@ -8,9 +8,15 @@ export function startQuestion(pin) {
   const io = getIO()
   const question = game.questions[game.currentQuestionIndex]
 
+  clearInterval(game.tickHandle)
+  clearTimeout(game.timeoutHandle)
+  game.tickHandle = null
+  game.timeoutHandle = null
+
   game.questionStartedAt = Date.now()
   game.answersReceived = new Set()
   game.answerCounts = new Map()
+  game.firstCorrectAnswered = false
 
   // Broadcast question (never send is_correct to players)
   const payload = {

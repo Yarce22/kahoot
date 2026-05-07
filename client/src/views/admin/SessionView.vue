@@ -38,18 +38,31 @@
 
       <!-- Players card -->
       <div class="card session-players-card">
-        <p class="pin-label" style="margin-bottom: 12px;">
-          Jugadores ({{ players.length }})
-        </p>
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+          <p class="pin-label" style="margin-bottom: 0;">
+            Jugadores ({{ players.length }})
+          </p>
+          <p v-if="phase === 'active' && currentQuestion" class="pin-label" style="margin-bottom: 0; color: var(--accent-green);">
+            {{ answeredNicknames.length }}/{{ players.length }} respondieron
+          </p>
+        </div>
         <div class="session-player-list" aria-live="polite" aria-label="Lista de jugadores">
           <TransitionGroup name="player" tag="div">
             <div
               v-for="p in players"
               :key="p.nickname"
               class="session-player-row"
+              :class="{ 'player-answered': phase === 'active' && answeredNicknames.includes(p.nickname) }"
             >
-              <span class="session-player-dot" aria-hidden="true"></span>
-              {{ p.nickname }}
+              <span
+                class="session-player-dot"
+                :style="phase === 'active' ? { background: answeredNicknames.includes(p.nickname) ? 'var(--accent-green)' : 'var(--text-muted)' } : {}"
+                aria-hidden="true"
+              ></span>
+              <span style="flex: 1;">{{ p.nickname }}</span>
+              <span v-if="phase === 'active'" style="font-size: 14px; font-weight: 800;">
+                {{ answeredNicknames.includes(p.nickname) ? '✓' : '…' }}
+              </span>
             </div>
           </TransitionGroup>
           <p
@@ -67,6 +80,13 @@
           <p class="nunito" style="font-weight: 800; font-size: 16px; color: var(--text-primary);">
             {{ currentQuestion ? `Pregunta ${currentIndex + 1}` : 'Iniciando…' }}
           </p>
+          <div
+            v-if="currentQuestion"
+            class="host-timer"
+            :class="{ 'host-timer-urgent': timerSeconds <= 5 && timerSeconds > 0 }"
+          >
+            {{ timerSeconds }}s
+          </div>
         </div>
         <p v-if="currentQuestion" style="color: var(--text-secondary); font-family: 'Nunito', sans-serif; font-size: 15px; font-weight: 700; font-style: italic;">
           "{{ currentQuestion.text }}"
@@ -113,12 +133,15 @@
                 }"
               >
                 <span style="font-size: 16px; flex-shrink: 0;">{{ ans.is_correct ? '✅' : ans.is_correct === false ? '❌' : '—' }}</span>
-                <div>
+                <div style="flex: 1;">
                   <p style="font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 13px; color: var(--text-secondary); margin-bottom: 2px;">{{ ans.questionText }}</p>
                   <p style="font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 14px; color: var(--text-primary);">
                     {{ ans.answer || '(sin respuesta)' }}
                   </p>
                 </div>
+                <span v-if="formatTime(ans.timeTakenMs)" style="font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 13px; color: var(--text-muted); white-space: nowrap; flex-shrink: 0;">
+                  {{ formatTime(ans.timeTakenMs) }}
+                </span>
               </div>
             </div>
           </div>
@@ -176,6 +199,8 @@ const errorMsg = ref('')
 const loadingResults = ref(false)
 const resultsLoaded = ref(false)
 const groupedResults = ref([])
+const timerSeconds = ref(0)
+const answeredNicknames = ref([])
 
 function initSession(currentPin) {
   players.value = []
@@ -191,6 +216,8 @@ function initSession(currentPin) {
   socket.off('player-left')
   socket.off('game-started')
   socket.off('question-show')
+  socket.off('timer-tick')
+  socket.off('player-answered')
   socket.off('game-end')
   socket.off('session-error')
 
@@ -219,6 +246,18 @@ function initSession(currentPin) {
   socket.on('question-show', (question) => {
     currentIndex.value = question.index
     currentQuestion.value = question
+    timerSeconds.value = question.timeLimitSeconds
+    answeredNicknames.value = []
+  })
+
+  socket.on('timer-tick', ({ secondsLeft }) => {
+    timerSeconds.value = secondsLeft
+  })
+
+  socket.on('player-answered', ({ nickname }) => {
+    if (!answeredNicknames.value.includes(nickname)) {
+      answeredNicknames.value = [...answeredNicknames.value, nickname]
+    }
   })
 
   socket.on('game-end', ({ leaderboard }) => {
@@ -240,6 +279,8 @@ onUnmounted(() => {
   socket.off('player-left')
   socket.off('game-started')
   socket.off('question-show')
+  socket.off('timer-tick')
+  socket.off('player-answered')
   socket.off('game-end')
   socket.off('session-error')
 })
@@ -277,7 +318,8 @@ async function loadResults() {
         questionText: r.question?.text ?? '',
         order: r.question?.order_index ?? 0,
         answer: answerText,
-        is_correct: r.is_correct
+        is_correct: r.is_correct,
+        timeTakenMs: r.time_taken_ms ?? null
       })
     }
     for (const p of Object.values(byPlayer)) {
@@ -290,6 +332,11 @@ async function loadResults() {
   } finally {
     loadingResults.value = false
   }
+}
+
+function formatTime(ms) {
+  if (ms == null) return null
+  return (ms / 1000).toFixed(1) + 's'
 }
 
 function rankClass(i) {
@@ -404,6 +451,25 @@ function rankLabel(i) {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 14px;
+}
+
+.host-timer {
+  font-family: 'Nunito', sans-serif;
+  font-weight: 900;
+  font-size: 28px;
+  color: var(--accent-yellow);
+  min-width: 52px;
+  text-align: right;
+  transition: color 0.3s;
+}
+
+.host-timer-urgent {
+  color: var(--accent-coral);
+  animation: pulse 0.5s ease infinite;
+}
+
+.session-player-row.player-answered {
+  opacity: 0.6;
 }
 
 /* Leaderboard entries */

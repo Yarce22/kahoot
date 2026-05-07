@@ -50,7 +50,8 @@ sessionsRouter.post('/', requireAdmin, async (req, res, next) => {
     questionStartedAt: null,
     players: new Map(),
     answersReceived: new Set(),
-    answerCounts: new Map()
+    answerCounts: new Map(),
+    firstCorrectAnswered: false
   })
 
   res.status(201).json({ pin, sessionId })
