@@ -57,6 +57,8 @@ CREATE TABLE players (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id UUID NOT NULL REFERENCES game_sessions(id) ON DELETE CASCADE,
   nickname TEXT NOT NULL,
+  score INT NOT NULL DEFAULT 0,
+  total_time_ms INT NOT NULL DEFAULT 0,
   joined_at TIMESTAMPTZ DEFAULT now()
 );
 

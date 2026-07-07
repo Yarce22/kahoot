@@ -1,6 +1,7 @@
 import { getIO } from '../lib/io.js'
 import supabase from '../lib/supabase.js'
 import { activeGames } from '../runtime/activeGames.js'
+import { rankPlayers } from './leaderboard.js'
 
 export function startQuestion(pin) {
   const game = activeGames.get(pin)
@@ -90,7 +91,17 @@ export async function endGame(pin) {
   clearInterval(game.tickHandle)
   clearTimeout(game.timeoutHandle)
 
-  // Update DB
+  // Persist each player's final score + total time before the in-memory game
+  // is discarded — otherwise the leaderboard can't be reconstructed later.
+  const players = [...game.players.values()]
+  await Promise.all(players.map(p =>
+    supabase
+      .from('players')
+      .update({ score: p.score, total_time_ms: p.totalTimeMs })
+      .eq('id', p.playerId)
+  ))
+
+  // Mark the session finished.
   await supabase
     .from('game_sessions')
     .update({ status: 'finished', ended_at: new Date().toISOString() })
@@ -103,7 +114,5 @@ export async function endGame(pin) {
 }
 
 function buildLeaderboard(game) {
-  return [...game.players.values()]
-    .sort((a, b) => b.score - a.score || a.totalTimeMs - b.totalTimeMs)
-    .map((p, i) => ({ rank: i + 1, nickname: p.nickname, score: p.score, totalTimeMs: p.totalTimeMs }))
+  return rankPlayers([...game.players.values()])
 }
