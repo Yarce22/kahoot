@@ -1,7 +1,10 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useAuthStore } from '../stores/auth.js'
 
 function requireAdmin(to, from, next) {
-  if (!localStorage.getItem('adminToken')) return next('/admin/login')
+  // Pinia is installed before the router in main.js, so the store is
+  // available during navigation guards.
+  if (!useAuthStore().isLoggedIn) return next('/admin/login')
   next()
 }
 

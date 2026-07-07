@@ -30,5 +30,7 @@ END $$;
 ALTER TABLE quizzes ALTER COLUMN owner_id SET NOT NULL;
 
 -- 2. Drop the legacy per-quiz admin token column — ownership is now
---    enforced via owner_id + the admins table.
-ALTER TABLE quizzes DROP COLUMN admin_token;
+--    enforced via owner_id + the admins table. IF EXISTS keeps this
+--    migration idempotent: re-running it after admin_token is already
+--    gone is a no-op instead of an error.
+ALTER TABLE quizzes DROP COLUMN IF EXISTS admin_token;
