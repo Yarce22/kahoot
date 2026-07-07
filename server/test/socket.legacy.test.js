@@ -5,11 +5,18 @@ import { io as ioClient } from 'socket.io-client'
 process.env.JWT_SECRET ??= 'test-secret'
 process.env.SUPABASE_URL ??= 'http://localhost:54321'
 process.env.SUPABASE_SERVICE_ROLE_KEY ??= 'test-service-role-key'
-// AUTH_MODE intentionally left unset (legacy) — this file verifies the
-// C1 fix: a JWT `auth.token` handshake must NOT grant host status under
-// legacy mode, symmetric to how a legacy `adminToken` handshake is
-// rejected under AUTH_MODE=jwt.
-delete process.env.AUTH_MODE
+// Force legacy mode explicitly — this file verifies the C1 fix: a JWT
+// `auth.token` handshake must NOT grant host status under legacy mode,
+// symmetric to how a legacy `adminToken` handshake is rejected under
+// AUTH_MODE=jwt.
+//
+// NOTE: must be SET, not deleted. index.js runs `import 'dotenv/config'`,
+// which repopulates any UNSET var from the developer's local .env — so
+// `delete process.env.AUTH_MODE` would be silently overridden by whatever
+// AUTH_MODE the .env carries (e.g. `jwt` after the production cutover),
+// making this test env-dependent. dotenv never overrides an already-set
+// var, so assigning 'legacy' here is stable regardless of .env.
+process.env.AUTH_MODE = 'legacy'
 
 const { httpServer } = await import('../src/index.js')
 const { signToken } = await import('../src/lib/jwt.js')
