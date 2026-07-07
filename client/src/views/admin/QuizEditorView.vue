@@ -133,7 +133,7 @@
 
                 <template v-else-if="editQuestionForm.type === 'open'">
                   <div class="field-group" style="grid-column: 1 / -1;">
-                    <label class="field-label-sm">Palabras clave (separadas por coma)</label>
+                    <label class="field-label-sm">Palabras clave (separadas por coma o espacio)</label>
                     <input v-model="editOpenCorrect" class="input-sm" placeholder="500, lechuga, tomate, cebolla" required />
                   </div>
                 </template>
@@ -225,7 +225,7 @@
           <!-- Open: required keywords -->
           <template v-else-if="newQuestion.type === 'open'">
             <div style="margin-bottom: 12px;">
-              <label class="field-label-sm" for="new-open-correct" style="margin-bottom: 8px; display: block;">Palabras clave (separadas por coma)</label>
+              <label class="field-label-sm" for="new-open-correct" style="margin-bottom: 8px; display: block;">Palabras clave (separadas por coma o espacio)</label>
               <input
                 id="new-open-correct"
                 v-model="newOpenCorrect"
@@ -234,7 +234,7 @@
                 required
               />
               <p style="color: var(--text-muted); font-size: 12px; margin-top: 6px; font-family: 'Nunito', sans-serif;">
-                La respuesta es correcta si contiene todas estas palabras (ignora mayúsculas y acentos).
+                La respuesta es correcta si contiene todas estas palabras, en cualquier orden (ignora mayúsculas y acentos).
               </p>
             </div>
           </template>
