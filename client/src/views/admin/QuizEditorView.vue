@@ -234,7 +234,7 @@
                 required
               />
               <p style="color: var(--text-muted); font-size: 12px; margin-top: 6px; font-family: 'Nunito', sans-serif;">
-                Separá cada palabra o frase clave con una coma. La respuesta es correcta si las contiene todas, en cualquier orden (ignora mayúsculas y acentos).
+                Ingresá solo los términos que la respuesta DEBE contener (no la respuesta completa), separados por coma. Es correcta si los contiene todos, en cualquier orden (ignora mayúsculas y acentos).
               </p>
             </div>
           </template>
