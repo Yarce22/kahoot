@@ -3,7 +3,7 @@ import supabase from '../lib/supabase.js'
 import { getIO } from '../lib/io.js'
 import { activeGames } from '../runtime/activeGames.js'
 import { startQuestion, endQuestion, endGame } from '../domain/gameEngine.js'
-import { matchOpenAnswer } from '../domain/openAnswer.js'
+import { matchOpenAnswer, parseKeywords } from '../domain/openAnswer.js'
 import { hostAuthMiddleware, jwtHostAuthMiddleware } from './hostAuth.js'
 
 export function registerSocketHandlers(io) {
@@ -137,6 +137,13 @@ async function handleSubmitAnswer(socket, data, ack) {
     const correctOption = question.options?.find(o => o.is_correct)
     if (correctOption) {
       isCorrect = matchOpenAnswer(answerText, correctOption.text)
+      // TEMP DEBUG — remove after diagnosing open-answer grading.
+      console.log('[open-grade]', JSON.stringify({
+        answerText,
+        keywordsRaw: correctOption.text,
+        parsed: parseKeywords(correctOption.text),
+        isCorrect
+      }))
     }
   }
 
