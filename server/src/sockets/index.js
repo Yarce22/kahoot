@@ -22,14 +22,23 @@ import supabase from '../lib/supabase.js'
 import { getIO } from '../lib/io.js'
 import { activeGames } from '../runtime/activeGames.js'
 import { startQuestion, endQuestion, endGame } from '../domain/gameEngine.js'
-import { hostAuthMiddleware } from './hostAuth.js'
+import { hostAuthMiddleware, jwtHostAuthMiddleware } from './hostAuth.js'
 
 export function registerSocketHandlers(io) {
-  // Apply host auth check lazily — only sockets that provide adminToken get isHost=true
-  // Player sockets provide no token and proceed normally
+  // Apply host auth check lazily — only sockets that provide a token
+  // (jwt `auth.token` or legacy `auth.adminToken`) get isHost=true.
+  // Player sockets provide neither and proceed normally.
   io.use((socket, next) => {
-    const token = socket.handshake.auth?.adminToken
-    if (token) {
+    const jwtToken = socket.handshake.auth?.token
+    const legacyToken = socket.handshake.auth?.adminToken
+
+    // Symmetric gating: a jwt `auth.token` handshake is only accepted under
+    // AUTH_MODE=jwt, exactly like the legacy `adminToken` handshake is only
+    // accepted under legacy mode. Under legacy, presenting a JWT must NOT
+    // grant host status — it falls through to the anonymous/next() path.
+    if (jwtToken && process.env.AUTH_MODE === 'jwt') {
+      jwtHostAuthMiddleware(socket, next)
+    } else if (legacyToken && process.env.AUTH_MODE !== 'jwt') {
       hostAuthMiddleware(socket, next)
     } else {
       next()
@@ -184,14 +193,45 @@ async function handleSubmitAnswer(socket, data, ack) {
   }
 }
 
+// verifyHostOwnership — re-resolves the CURRENT active game's quiz owner_id
+// and checks it against socket.admin.id. Called on every host action (not
+// cached) so a recycled PIN pointing at a different session/quiz can never
+// be authorized by a stale cache (see W3). Under legacy mode socket.admin is
+// never set — there is no per-admin identity, so isHost alone is the guard,
+// matching pre-existing legacy behavior.
+async function verifyHostOwnership(socket, game) {
+  if (!socket.admin) return true
+  if (!game) return false
+
+  const { data: quiz, error } = await supabase
+    .from('quizzes')
+    .select('owner_id')
+    .eq('id', game.quizId)
+    .single()
+
+  return !(error || !quiz || quiz.owner_id !== socket.admin.id)
+}
+
 // ─── HOST: host:join-session ──────────────────────────────────────────────────
 
-function handleHostJoinSession(socket, data, ack) {
+async function handleHostJoinSession(socket, data, ack) {
   if (!socket.isHost) return ack?.({ error: 'UNAUTHORIZED' })
   const { pin } = data ?? {}
   if (!pin) return ack?.({ error: 'VALIDATION_ERROR' })
   const game = activeGames.get(pin)
   if (!game) return ack?.({ error: 'SESSION_NOT_FOUND' })
+
+  // Ownership check — runs whenever a JWT was accepted (socket.admin is
+  // set), regardless of AUTH_MODE. Legacy has a single shared admin token
+  // and no per-admin identity, so verifyHostOwnership is a no-op there.
+  const authorized = await verifyHostOwnership(socket, game)
+  if (!authorized) return ack?.({ error: 'UNAUTHORIZED' })
+
+  // Cache the authorized SESSION id (not just the PIN) — PINs are recycled
+  // after endGame, so a bare pin match is not proof of ownership across
+  // sessions (see W3). next-question / host:end-game re-verify both the
+  // session identity and ownership on every action.
+  socket.authorizedSessionId = game.sessionId
 
   // Leave previous session room if switching sessions
   if (socket.gamePin && socket.gamePin !== pin) {
@@ -207,13 +247,22 @@ function handleHostJoinSession(socket, data, ack) {
 
 // ─── HOST: next-question ──────────────────────────────────────────────────────
 
-function handleNextQuestion(socket, io, data) {
+async function handleNextQuestion(socket, io, data) {
   if (!socket.isHost) return socket.emit('error', { code: 'UNAUTHORIZED' })
   const { pin } = data ?? {}
   if (!pin) return socket.emit('error', { code: 'VALIDATION_ERROR' })
 
   const game = activeGames.get(pin)
   if (!game) return socket.emit('error', { code: 'SESSION_NOT_FOUND' })
+
+  // Reject if the PIN was recycled into a different session since this
+  // socket was authorized, then re-verify ownership against the DB (W3) —
+  // never trust a cached pin alone as proof of ownership.
+  if (socket.admin && socket.authorizedSessionId !== game.sessionId) {
+    return socket.emit('error', { code: 'UNAUTHORIZED' })
+  }
+  const authorized = await verifyHostOwnership(socket, game)
+  if (!authorized) return socket.emit('error', { code: 'UNAUTHORIZED' })
 
   game.currentQuestionIndex++
 
@@ -226,11 +275,22 @@ function handleNextQuestion(socket, io, data) {
 
 // ─── HOST: host:end-game ──────────────────────────────────────────────────────
 
-function handleHostEndGame(socket, data) {
+async function handleHostEndGame(socket, data) {
   if (!socket.isHost) return socket.emit('error', { code: 'UNAUTHORIZED' })
   const { pin } = data ?? {}
+
   const game = activeGames.get(pin)
   if (!game) return socket.emit('error', { code: 'SESSION_NOT_FOUND' })
+
+  // Reject if the PIN was recycled into a different session since this
+  // socket was authorized, then re-verify ownership against the DB (W3) —
+  // never trust a cached pin alone as proof of ownership.
+  if (socket.admin && socket.authorizedSessionId !== game.sessionId) {
+    return socket.emit('error', { code: 'UNAUTHORIZED' })
+  }
+  const authorized = await verifyHostOwnership(socket, game)
+  if (!authorized) return socket.emit('error', { code: 'UNAUTHORIZED' })
+
   if (game.currentQuestionIndex === -1) return socket.emit('error', { code: 'SESSION_INVALID_TRANSITION' })
   endGame(pin)
 }

@@ -1,37 +1,56 @@
 import { Router } from 'express'
-import { randomBytes } from 'crypto'
 import supabase from '../lib/supabase.js'
 import { requireAdmin } from '../middleware/requireAdmin.js'
+import { authGate, ownerGate } from '../middleware/jwtGate.js'
+import { resolveBootstrapAdminOwnerId } from '../lib/bootstrapAdmin.js'
 import { httpError } from '../lib/httpError.js'
 
 export const quizzesRouter = Router()
 
-// POST /api/quizzes — create quiz (no auth required in MVP)
-quizzesRouter.post('/', requireAdmin, async (req, res, next) => {
+// POST /api/quizzes — create quiz.
+// Ownership (owner_id) is mandatory after migration 002:
+//   - AUTH_MODE=jwt: owner_id = req.admin.id (the authenticated admin)
+//   - AUTH_MODE=legacy: owner_id = the bootstrap admin (single lookup),
+//     since legacy requests carry no JWT identity.
+quizzesRouter.post('/', requireAdmin, authGate, async (req, res, next) => {
   const { title, description } = req.body
 
   if (!title) return next(httpError(400, 'title is required'))
   if (title.length > 200) return next(httpError(400, 'title must be 200 characters or fewer'))
 
-  const adminToken = randomBytes(32).toString('hex')
+  let ownerId
+  try {
+    ownerId = process.env.AUTH_MODE === 'jwt' ? req.admin.id : await resolveBootstrapAdminOwnerId()
+  } catch (err) {
+    return next(err)
+  }
 
   const { data, error } = await supabase
     .from('quizzes')
-    .insert({ title, description: description ?? null, admin_token: adminToken })
+    .insert({ title, description: description ?? null, owner_id: ownerId })
     .select('id')
     .single()
 
   if (error) return next(error)
 
-  res.status(201).json({ quizId: data.id, adminToken })
+  res.status(201).json({ quizId: data.id })
 })
 
-// GET /api/quizzes — list all quizzes
-quizzesRouter.get('/', requireAdmin, async (req, res, next) => {
-  const { data, error } = await supabase
+// GET /api/quizzes — list quizzes.
+// Under AUTH_MODE=jwt this is a per-admin list (owner_id = req.admin.id) —
+// there is no "list all admins' quizzes" use case once identity exists.
+// Under legacy there is no per-admin identity, so it keeps listing all.
+quizzesRouter.get('/', requireAdmin, authGate, async (req, res, next) => {
+  let query = supabase
     .from('quizzes')
     .select('id, title, description, created_at')
     .order('created_at', { ascending: false })
+
+  if (req.admin) {
+    query = query.eq('owner_id', req.admin.id)
+  }
+
+  const { data, error } = await query
 
   if (error) return next(error)
 
@@ -39,7 +58,7 @@ quizzesRouter.get('/', requireAdmin, async (req, res, next) => {
 })
 
 // GET /api/quizzes/:id — get quiz with questions and options
-quizzesRouter.get('/:id', requireAdmin, async (req, res, next) => {
+quizzesRouter.get('/:id', requireAdmin, authGate, ownerGate(), async (req, res, next) => {
   const { id } = req.params
 
   const { data: quiz, error: quizError } = await supabase
@@ -87,7 +106,7 @@ quizzesRouter.get('/:id', requireAdmin, async (req, res, next) => {
 })
 
 // PUT /api/quizzes/:id — update quiz
-quizzesRouter.put('/:id', requireAdmin, async (req, res, next) => {
+quizzesRouter.put('/:id', requireAdmin, authGate, ownerGate(), async (req, res, next) => {
   const { id } = req.params
   const { title, description } = req.body
 
@@ -111,7 +130,7 @@ quizzesRouter.put('/:id', requireAdmin, async (req, res, next) => {
 })
 
 // DELETE /api/quizzes/:id — delete quiz
-quizzesRouter.delete('/:id', requireAdmin, async (req, res, next) => {
+quizzesRouter.delete('/:id', requireAdmin, authGate, ownerGate(), async (req, res, next) => {
   const { id } = req.params
 
   const { data: activeSessions, error: sessionError } = await supabase
