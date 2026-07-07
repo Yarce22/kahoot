@@ -57,6 +57,11 @@ export const useQuizStore = defineStore('quiz', {
       await api.del(`/api/quizzes/${id}`)
       this.quizzes = this.quizzes.filter(q => q.id !== id)
     },
+    // createSession — starts a live game for a quiz and returns { pin }.
+    async createSession(quizId) {
+      const api = useAdminApi()
+      return api.post('/api/sessions', { quizId })
+    },
     async createQuestion(quizId, data) {
       const api = useAdminApi()
       const q = await api.post(`/api/quizzes/${quizId}/questions`, data)

@@ -12,6 +12,7 @@
 
     <!-- Error -->
     <p v-if="store.error" class="error-msg">{{ store.error }}</p>
+    <p v-if="startError" class="error-msg" role="alert">{{ startError }}</p>
 
     <!-- Quiz grid -->
     <div v-if="store.quizzes.length" class="quiz-grid">
@@ -36,8 +37,8 @@
 
         <!-- Actions -->
         <div class="quiz-card-actions">
-          <button class="btn-icon btn-host" @click="router.push(`/admin/quizzes/${quiz.id}`)">
-            ▶ Iniciar
+          <button class="btn-icon btn-host" @click="start(quiz)" :disabled="startingId === quiz.id">
+            {{ startingId === quiz.id ? 'Iniciando…' : '▶ Iniciar' }}
           </button>
           <button class="btn-icon btn-edit" @click="router.push(`/admin/quizzes/${quiz.id}`)">
             ✏ Editar
@@ -68,14 +69,33 @@
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQuizStore } from '../../stores/quiz.js'
 
 const router = useRouter()
 const store = useQuizStore()
 
+const startingId = ref(null)
+const startError = ref('')
+
 onMounted(() => store.fetchQuizzes())
+
+// start — create a live session for the quiz and go straight to the host
+// panel (the lobby where players join by PIN), instead of the editor.
+async function start(quiz) {
+  if (startingId.value) return
+  startingId.value = quiz.id
+  startError.value = ''
+  try {
+    const { pin } = await store.createSession(quiz.id)
+    router.push(`/admin/sessions/${pin}`)
+  } catch (e) {
+    startError.value = `No se pudo iniciar "${quiz.title}": ${e.message}`
+  } finally {
+    startingId.value = null
+  }
+}
 
 async function remove(id) {
   if (!confirm('¿Eliminar este cuestionario?')) return
