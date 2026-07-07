@@ -44,3 +44,20 @@ describe('quiz store createQuiz', () => {
     expect(quiz.description).toBeNull()
   })
 })
+
+describe('quiz store createSession', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    post.mockReset()
+  })
+
+  it('posts the quizId and returns the session (with pin)', async () => {
+    post.mockResolvedValue({ pin: '123456' })
+    const store = useQuizStore()
+
+    const res = await store.createSession('quiz-1')
+
+    expect(post).toHaveBeenCalledWith('/api/sessions', { quizId: 'quiz-1' })
+    expect(res).toEqual({ pin: '123456' })
+  })
+})
