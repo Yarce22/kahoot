@@ -124,7 +124,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useGameStore } from '../stores/game.js'
 import { useGame } from '../composables/useGame.js'
@@ -134,6 +134,23 @@ const pin = route.params.pin
 const store = useGameStore()
 const { submitAnswer } = useGame(pin)
 const openText = ref('')
+
+// Clear the draft when a new question starts.
+watch(() => store.currentQuestion?.index, () => { openText.value = '' })
+
+// Auto-submit open answers when time is almost up. Fires at <= 1s left (the
+// server closes the question at 0s and immediately moves on, so submitting on
+// the 0-tick would lose the race). Sends whatever was typed — including an
+// empty string, which the server records as a non-answer.
+watch(() => store.secondsLeft, (secs) => {
+  if (
+    secs != null && secs <= 1 &&
+    store.currentQuestion?.type === 'open' &&
+    !store.myAnswer
+  ) {
+    autoSubmitOpen()
+  }
+})
 
 const timerPercent = computed(() => {
   if (!store.currentQuestion) return 100
@@ -156,6 +173,16 @@ function answerOpen() {
   const text = openText.value.trim()
   if (!text) return
   store.myAnswer = text
+  submitAnswer({ questionIndex: store.currentQuestion.index, answerText: text })
+}
+
+// autoSubmitOpen — timeout fallback: submit the current draft even if empty.
+function autoSubmitOpen() {
+  if (store.myAnswer) return
+  const text = openText.value.trim()
+  // Truthy marker so the "sent" state locks in and this can't re-fire, even
+  // when the player wrote nothing.
+  store.myAnswer = text || '(sin respuesta)'
   submitAnswer({ questionIndex: store.currentQuestion.index, answerText: text })
 }
 </script>
