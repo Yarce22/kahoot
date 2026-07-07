@@ -33,6 +33,21 @@ test('matchOpenAnswer — empty/undefined response is not correct', () => {
   assert.equal(matchOpenAnswer(undefined, KEYWORDS), false)
 })
 
-test('parseKeywords — trims, lowercases, drops empties', () => {
+test('matchOpenAnswer — keywords match regardless of order in the response', () => {
+  assert.equal(
+    matchOpenAnswer('con cebolla, tomate, lechuga y 500gr de carne', KEYWORDS),
+    true
+  )
+})
+
+test('matchOpenAnswer — space-separated keywords are treated as individual words', () => {
+  // Entered without commas; must still match each word independently, any order.
+  const spaced = '500 lechuga tomate cebolla'
+  assert.equal(matchOpenAnswer('cebolla tomate lechuga 500', spaced), true)
+  assert.equal(matchOpenAnswer('solo lechuga y tomate', spaced), false)
+})
+
+test('parseKeywords — splits on commas and whitespace, trims, lowercases, drops empties', () => {
   assert.deepEqual(parseKeywords(' 500 , Lechuga ,, TOMATE '), ['500', 'lechuga', 'tomate'])
+  assert.deepEqual(parseKeywords('500 lechuga  tomate'), ['500', 'lechuga', 'tomate'])
 })
