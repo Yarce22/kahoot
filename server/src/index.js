@@ -8,6 +8,7 @@ import { registerSocketHandlers } from './sockets/index.js'
 import { quizzesRouter } from './routes/quizzes.js'
 import { questionsRouter } from './routes/questions.js'
 import { sessionsRouter } from './routes/sessions.js'
+import { authRouter } from './routes/auth.js'
 import { errorHandler } from './middleware/errorHandler.js'
 
 const app = express()
@@ -30,6 +31,7 @@ app.use(cors({ origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173' }))
 app.use(express.json())
 app.use('/api', limiter)
 
+app.use('/api/auth', authRouter)
 app.use('/api/quizzes', quizzesRouter)
 app.use('/api', questionsRouter)
 app.use('/api/sessions', sessionsRouter)
