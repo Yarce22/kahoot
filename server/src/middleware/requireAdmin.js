@@ -1,6 +1,12 @@
 import { timingSafeEqual } from 'crypto'
 
+// requireAdmin — legacy global-token guard.
+// Stays active whenever AUTH_MODE !== 'jwt' (the default in PR1, so no
+// behavior change yet). PR2/PR3 will switch routes to the jwt-based
+// requireAuth/requireQuizOwner middlewares once AUTH_MODE=jwt is enabled.
 export function requireAdmin(req, res, next) {
+  if (process.env.AUTH_MODE === 'jwt') return next()
+
   const token = req.headers['x-admin-token']
   if (!token) return res.status(401).json({ error: 'Missing admin token' })
 

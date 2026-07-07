@@ -3,12 +3,21 @@
 -- Run this in the Supabase SQL editor (Dashboard > SQL Editor)
 -- ============================================================
 
+-- admins
+CREATE TABLE admins (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
 -- quizzes
 CREATE TABLE quizzes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title TEXT NOT NULL CHECK (char_length(title) <= 200),
   description TEXT,
-  admin_token TEXT NOT NULL,  -- stored as bcrypt hash
+  admin_token TEXT NOT NULL,              -- legacy per-quiz token; dropped in migration 002 with the quizzes.js update
+  owner_id UUID REFERENCES admins(id),    -- nullable in PR1; SET NOT NULL in migration 002
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -70,3 +79,4 @@ CREATE INDEX idx_players_session ON players(session_id);
 CREATE INDEX idx_player_answers_player ON player_answers(player_id);
 CREATE INDEX idx_player_answers_question ON player_answers(question_id);
 CREATE INDEX idx_questions_quiz ON questions(quiz_id, order_index);
+CREATE INDEX idx_quizzes_owner ON quizzes(owner_id);
