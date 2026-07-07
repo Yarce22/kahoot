@@ -210,7 +210,7 @@ function initSession(currentPin) {
   finalLeaderboard.value = []
   errorMsg.value = ''
 
-  const socket = connect({ adminToken: auth.adminToken })
+  const socket = connect({ token: auth.token })
 
   socket.off('player-joined')
   socket.off('player-left')

@@ -5,17 +5,30 @@
       <div class="admin-login-icon" aria-hidden="true">🔐</div>
 
       <h1 class="admin-title">Panel Admin</h1>
-      <p class="admin-subtitle">Ingresá tu token para acceder</p>
+      <p class="admin-subtitle">Ingresá con tu email y contraseña</p>
 
       <form @submit.prevent="submit" novalidate>
         <div class="field-group">
-          <label class="field-label-sm" for="token-input">Token de administrador</label>
+          <label class="field-label-sm" for="email-input">Email</label>
           <input
-            id="token-input"
-            v-model="token"
+            id="email-input"
+            v-model="email"
+            class="input-sm"
+            type="email"
+            placeholder="admin@ejemplo.com"
+            required
+            autocomplete="username"
+          />
+        </div>
+
+        <div class="field-group">
+          <label class="field-label-sm" for="password-input">Contraseña</label>
+          <input
+            id="password-input"
+            v-model="password"
             class="input-sm"
             type="password"
-            placeholder="Ingresá el token"
+            placeholder="Ingresá tu contraseña"
             required
             autocomplete="current-password"
           />
@@ -23,8 +36,8 @@
 
         <p v-if="error" class="error-msg" role="alert">{{ error }}</p>
 
-        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 8px;">
-          Ingresar
+        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 8px;" :disabled="loading">
+          {{ loading ? 'Ingresando…' : 'Ingresar' }}
         </button>
       </form>
     </div>
@@ -36,18 +49,41 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth.js'
 
-const token = ref('')
+const email = ref('')
+const password = ref('')
 const error = ref('')
+const loading = ref(false)
 const router = useRouter()
 const auth = useAuthStore()
+const base = import.meta.env.VITE_API_BASE_URL || ''
 
-function submit() {
-  if (!token.value.trim()) {
-    error.value = 'El token es requerido.'
+async function submit() {
+  error.value = ''
+  if (!email.value.trim() || !password.value) {
+    error.value = 'Email y contraseña son requeridos.'
     return
   }
-  auth.login(token.value.trim())
-  router.push('/admin/quizzes')
+  loading.value = true
+  try {
+    const res = await fetch(`${base}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.value.trim(), password: password.value })
+    })
+    if (!res.ok) {
+      error.value = res.status === 401
+        ? 'Email o contraseña incorrectos.'
+        : `No se pudo iniciar sesión (error ${res.status}).`
+      return
+    }
+    const data = await res.json()
+    auth.login(data.token, data.admin)
+    router.push('/admin/quizzes')
+  } catch (_) {
+    error.value = 'No se pudo conectar con el servidor.'
+  } finally {
+    loading.value = false
+  }
 }
 </script>
 
