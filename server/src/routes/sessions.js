@@ -7,6 +7,7 @@ import supabase from '../lib/supabase.js'
 import { activeGames } from '../runtime/activeGames.js'
 import { getIO } from '../lib/io.js'
 import { startQuestion } from '../domain/gameEngine.js'
+import { rankPlayers } from '../domain/leaderboard.js'
 
 export const sessionsRouter = Router()
 
@@ -175,16 +176,23 @@ sessionsRouter.get('/:pin/results', requireAdmin, authGate, ownerGate({ resolve:
     .single()
   if (sessionErr || !session) return next(httpError(404, 'Session not found'))
 
-  // Fetch player IDs for this session first, then filter answers
+  // Fetch this session's players (with persisted score/time) — used both to
+  // build the ranked leaderboard and to scope the answers query below.
   const { data: sessionPlayers } = await supabase
     .from('players')
-    .select('id')
+    .select('id, nickname, score, total_time_ms')
     .eq('session_id', session.id)
 
-  const playerIds = (sessionPlayers ?? []).map(p => p.id)
+  const players = sessionPlayers ?? []
+  const leaderboard = rankPlayers(players.map(p => ({
+    nickname: p.nickname,
+    score: p.score,
+    totalTimeMs: p.total_time_ms
+  })))
+  const playerIds = players.map(p => p.id)
 
   if (!playerIds.length) {
-    return res.json({ sessionId: session.id, status: session.status, results: [] })
+    return res.json({ sessionId: session.id, status: session.status, leaderboard, results: [] })
   }
 
   const { data: results, error } = await supabase
@@ -203,5 +211,5 @@ sessionsRouter.get('/:pin/results', requireAdmin, authGate, ownerGate({ resolve:
 
   if (error) return next(httpError(500, 'Failed to fetch results'))
 
-  res.json({ sessionId: session.id, status: session.status, results: results ?? [] })
+  res.json({ sessionId: session.id, status: session.status, leaderboard, results: results ?? [] })
 })
