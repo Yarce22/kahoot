@@ -40,14 +40,26 @@ test('matchOpenAnswer — keywords match regardless of order in the response', (
   )
 })
 
-test('matchOpenAnswer — space-separated keywords are treated as individual words', () => {
-  // Entered without commas; must still match each word independently, any order.
-  const spaced = '500 lechuga tomate cebolla'
-  assert.equal(matchOpenAnswer('cebolla tomate lechuga 500', spaced), true)
-  assert.equal(matchOpenAnswer('solo lechuga y tomate', spaced), false)
+test('matchOpenAnswer — a multi-word keyword must appear contiguously', () => {
+  // "tomate cherry" is ONE keyword (a phrase), not two.
+  const kw = '200, guisantes, tomate cherry, stracciatella'
+  assert.equal(
+    matchOpenAnswer('200 gr, guisantes, tomate cherry y stracciatella', kw),
+    true
+  )
+  // Same words present but the phrase is broken up → not a match.
+  assert.equal(
+    matchOpenAnswer('200 gr, guisantes, cherry con tomate, stracciatella', kw),
+    false
+  )
 })
 
-test('parseKeywords — splits on commas and whitespace, trims, lowercases, drops empties', () => {
+test('matchOpenAnswer — multi-word keywords still match in any order relative to each other', () => {
+  const kw = 'tomate cherry, stracciatella'
+  assert.equal(matchOpenAnswer('stracciatella y tomate cherry', kw), true)
+})
+
+test('parseKeywords — splits on commas only (keywords may be multi-word phrases)', () => {
   assert.deepEqual(parseKeywords(' 500 , Lechuga ,, TOMATE '), ['500', 'lechuga', 'tomate'])
-  assert.deepEqual(parseKeywords('500 lechuga  tomate'), ['500', 'lechuga', 'tomate'])
+  assert.deepEqual(parseKeywords('200, tomate cherry, stracciatella'), ['200', 'tomate cherry', 'stracciatella'])
 })
