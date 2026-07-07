@@ -276,7 +276,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useQuizStore } from '../../stores/quiz.js'
 import { useAdminApi } from '../../composables/useAdminApi.js'
@@ -286,9 +286,12 @@ const router = useRouter()
 const store = useQuizStore()
 const api = useAdminApi()
 
-const routeId = route.params.id
-const isNew = !routeId
-const quizId = ref(isNew ? null : routeId)
+const quizId = ref(route.params.id || null)
+// isNew is derived from quizId, not the initial route param. This route uses
+// no <RouterView :key>, so after saveQuiz creates a quiz and sets quizId, the
+// same reused component instance must switch from create to update — a static
+// isNew would stay true and create a duplicate on the next save.
+const isNew = computed(() => !quizId.value)
 
 const form = ref({ title: '', description: '' })
 const saving = ref(false)
@@ -309,7 +312,7 @@ const creatingSession = ref(false)
 const sessionPin = ref('')
 
 onMounted(async () => {
-  if (!isNew) {
+  if (!isNew.value) {
     await store.fetchQuiz(quizId.value)
     if (store.activeQuiz) {
       form.value.title = store.activeQuiz.title
@@ -323,7 +326,7 @@ async function saveQuiz() {
   saving.value = true
   quizError.value = ''
   try {
-    if (isNew) {
+    if (isNew.value) {
       const quiz = await store.createQuiz(form.value)
       quizId.value = quiz.id
       router.replace(`/admin/quizzes/${quiz.id}`)
