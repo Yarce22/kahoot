@@ -1,0 +1,46 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { setActivePinia, createPinia } from 'pinia'
+
+const post = vi.hoisted(() => vi.fn())
+vi.mock('../src/composables/useAdminApi.js', () => ({
+  useAdminApi: () => ({ post, get: vi.fn(), put: vi.fn(), del: vi.fn() })
+}))
+
+import { useQuizStore } from '../src/stores/quiz.js'
+
+describe('quiz store createQuiz', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    post.mockReset()
+  })
+
+  it('normalizes the { quizId } response to a quiz exposing .id', async () => {
+    post.mockResolvedValue({ quizId: 'quiz-123' })
+    const store = useQuizStore()
+
+    const quiz = await store.createQuiz({ title: 'Trivia', description: 'Fun' })
+
+    // The editor redirect reads quiz.id — a { quizId } shape would send it to
+    // /admin/quizzes/undefined.
+    expect(quiz).toEqual({ id: 'quiz-123', title: 'Trivia', description: 'Fun' })
+  })
+
+  it('adds the created quiz (with .id) to the list', async () => {
+    post.mockResolvedValue({ quizId: 'quiz-123' })
+    const store = useQuizStore()
+
+    await store.createQuiz({ title: 'Trivia' })
+
+    expect(store.quizzes).toHaveLength(1)
+    expect(store.quizzes[0].id).toBe('quiz-123')
+  })
+
+  it('defaults description to null when omitted', async () => {
+    post.mockResolvedValue({ quizId: 'q' })
+    const store = useQuizStore()
+
+    const quiz = await store.createQuiz({ title: 'X' })
+
+    expect(quiz.description).toBeNull()
+  })
+})

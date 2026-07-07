@@ -35,7 +35,12 @@ export const useQuizStore = defineStore('quiz', {
     },
     async createQuiz(data) {
       const api = useAdminApi()
-      const quiz = await api.post('/api/quizzes', data)
+      // POST /api/quizzes responds with { quizId }, but the rest of the app
+      // (list links, the editor redirect) works with a quiz shaped like the
+      // list endpoint ({ id, title, description }). Normalize here so the id
+      // is available as `.id` everywhere.
+      const { quizId } = await api.post('/api/quizzes', data)
+      const quiz = { id: quizId, title: data.title, description: data.description ?? null }
       this.quizzes.push(quiz)
       return quiz
     },
