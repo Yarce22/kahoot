@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import supabase from '../lib/supabase.js'
 import { requireAdmin } from '../middleware/requireAdmin.js'
+import { authGate, ownerGate } from '../middleware/jwtGate.js'
 import { httpError } from '../lib/httpError.js'
 
 export const questionsRouter = Router()
@@ -27,8 +28,29 @@ function validateOptions(options) {
   return null
 }
 
+// resolveQuizIdFromOption — answer_options has no quiz_id column; resolve
+// via its parent question's quiz_id. Used for the /options/:id routes,
+// which requireQuizOwner has no built-in 'option' resource for.
+async function resolveQuizIdFromOption(req) {
+  const { data: option, error } = await supabase
+    .from('answer_options')
+    .select('question_id')
+    .eq('id', req.params.id)
+    .single()
+  if (error || !option) return null
+
+  const { data: question, error: qError } = await supabase
+    .from('questions')
+    .select('quiz_id')
+    .eq('id', option.question_id)
+    .single()
+  if (qError || !question) return null
+
+  return question.quiz_id
+}
+
 // POST /api/quizzes/:id/questions
-questionsRouter.post('/quizzes/:id/questions', requireAdmin, async (req, res, next) => {
+questionsRouter.post('/quizzes/:id/questions', requireAdmin, authGate, ownerGate(), async (req, res, next) => {
   const { id: quizId } = req.params
   const { text, type, time_limit_seconds, options, correct_answer } = req.body
 
@@ -89,7 +111,7 @@ questionsRouter.post('/quizzes/:id/questions', requireAdmin, async (req, res, ne
 })
 
 // PUT /api/questions/:id
-questionsRouter.put('/questions/:id', requireAdmin, async (req, res, next) => {
+questionsRouter.put('/questions/:id', requireAdmin, authGate, ownerGate({ resource: 'question' }), async (req, res, next) => {
   const { id } = req.params
   const { text, type, time_limit_seconds, order_index, options, correct_answer } = req.body
 
@@ -165,7 +187,7 @@ questionsRouter.put('/questions/:id', requireAdmin, async (req, res, next) => {
 })
 
 // DELETE /api/questions/:id
-questionsRouter.delete('/questions/:id', requireAdmin, async (req, res, next) => {
+questionsRouter.delete('/questions/:id', requireAdmin, authGate, ownerGate({ resource: 'question' }), async (req, res, next) => {
   const { id } = req.params
 
   // player_answers FK has no CASCADE in the DB — delete manually first
@@ -182,7 +204,7 @@ questionsRouter.delete('/questions/:id', requireAdmin, async (req, res, next) =>
 })
 
 // POST /api/questions/:id/options
-questionsRouter.post('/questions/:id/options', requireAdmin, async (req, res, next) => {
+questionsRouter.post('/questions/:id/options', requireAdmin, authGate, ownerGate({ resource: 'question' }), async (req, res, next) => {
   const { id: questionId } = req.params
   const { text, is_correct } = req.body
 
@@ -201,7 +223,7 @@ questionsRouter.post('/questions/:id/options', requireAdmin, async (req, res, ne
 })
 
 // PUT /api/options/:id
-questionsRouter.put('/options/:id', requireAdmin, async (req, res, next) => {
+questionsRouter.put('/options/:id', requireAdmin, authGate, ownerGate({ resolve: resolveQuizIdFromOption }), async (req, res, next) => {
   const { id } = req.params
   const { text, is_correct } = req.body
 
@@ -222,7 +244,7 @@ questionsRouter.put('/options/:id', requireAdmin, async (req, res, next) => {
 })
 
 // DELETE /api/options/:id
-questionsRouter.delete('/options/:id', requireAdmin, async (req, res, next) => {
+questionsRouter.delete('/options/:id', requireAdmin, authGate, ownerGate({ resolve: resolveQuizIdFromOption }), async (req, res, next) => {
   const { id } = req.params
 
   const { error } = await supabase

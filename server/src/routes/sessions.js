@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { randomInt } from 'crypto'
 import { requireAdmin } from '../middleware/requireAdmin.js'
+import { authGate, ownerGate } from '../middleware/jwtGate.js'
 import { httpError } from '../lib/httpError.js'
 import supabase from '../lib/supabase.js'
 import { activeGames } from '../runtime/activeGames.js'
@@ -9,8 +10,15 @@ import { startQuestion } from '../domain/gameEngine.js'
 
 export const sessionsRouter = Router()
 
-// POST /api/sessions — create a new game session (admin only)
-sessionsRouter.post('/', requireAdmin, async (req, res, next) => {
+// resolveQuizIdFromBody — session creation carries the quiz id in the
+// request body, not a route param, so ownership is resolved via a
+// custom resolver instead of the default paramName lookup.
+async function resolveQuizIdFromBody(req) {
+  return req.body?.quizId ?? null
+}
+
+// POST /api/sessions — create a new game session (admin only, must own the quiz)
+sessionsRouter.post('/', requireAdmin, authGate, ownerGate({ resolve: resolveQuizIdFromBody }), async (req, res, next) => {
   const { quizId } = req.body
   if (!quizId) return next(httpError(400, 'quizId is required'))
 
@@ -81,18 +89,46 @@ sessionsRouter.get('/:pin', async (req, res, next) => {
   })
 })
 
-// POST /api/sessions/:pin/start — start the game (admin only)
-sessionsRouter.post('/:pin/start', requireAdmin, async (req, res, next) => {
+// resolveQuizIdFromPin — session routes are keyed by :pin, not a session
+// id, so ownership is resolved via a custom resolver that looks up the
+// session by pin first. This resolver is shared by /start (only ever
+// relevant while a session is lobby/active) AND /results (relevant for
+// finished sessions too — that's the normal case admins fetch results in).
+// PINs are recycled (the partial unique index only covers lobby/active
+// sessions — see schema.sql), so multiple rows can share a PIN over time;
+// a bare `.eq('pin', ...).single()` can match >1 row and error out,
+// 404-ing the legitimate owner. Instead of filtering by status (which
+// would incorrectly resolve to a newer recycled session's quiz for
+// /results on an already-finished game), order by recency and take the
+// single most-recently-created session for that PIN — deterministic for
+// both routes and correct for finished-session results.
+async function resolveQuizIdFromPin(req) {
+  const { data, error } = await supabase
+    .from('game_sessions')
+    .select('quiz_id')
+    .eq('pin', req.params.pin)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single()
+  if (error || !data) return null
+  return data.quiz_id
+}
+
+// POST /api/sessions/:pin/start — start the game (admin only, must own the quiz)
+sessionsRouter.post('/:pin/start', requireAdmin, authGate, ownerGate({ resolve: resolveQuizIdFromPin }), async (req, res, next) => {
   const { pin } = req.params
   const game = activeGames.get(pin)
   if (!game) return next(httpError(404, 'Session not found'))
   if (game.currentQuestionIndex !== -1) return next(httpError(409, 'Game already started'))
 
-  // Verify session is still lobby in DB
+  // Verify session is still lobby in DB. Constrained to lobby/active (see
+  // resolveQuizIdFromPin) so a recycled PIN with an older finished session
+  // can't make `.single()` ambiguous.
   const { data: session, error: sessionErr } = await supabase
     .from('game_sessions')
     .select('id, status')
     .eq('pin', pin)
+    .in('status', ['lobby', 'active'])
     .single()
   if (sessionErr || !session) return next(httpError(404, 'Session not found'))
   if (session.status !== 'lobby') return next(httpError(409, 'Session is not in lobby state'))
@@ -123,14 +159,19 @@ sessionsRouter.post('/:pin/start', requireAdmin, async (req, res, next) => {
   res.json({ ok: true, totalQuestions: questions.length })
 })
 
-// GET /api/sessions/:pin/results — full player answers (admin only)
-sessionsRouter.get('/:pin/results', requireAdmin, async (req, res, next) => {
+// GET /api/sessions/:pin/results — full player answers (admin only, must own the quiz)
+sessionsRouter.get('/:pin/results', requireAdmin, authGate, ownerGate({ resolve: resolveQuizIdFromPin }), async (req, res, next) => {
   const { pin } = req.params
 
+  // Same recycled-PIN ambiguity as resolveQuizIdFromPin above — order by
+  // recency and take the single most-recently-created session for this PIN
+  // instead of an unconstrained `.single()` that can match >1 row.
   const { data: session, error: sessionErr } = await supabase
     .from('game_sessions')
     .select('id, status, started_at, ended_at')
     .eq('pin', pin)
+    .order('created_at', { ascending: false })
+    .limit(1)
     .single()
   if (sessionErr || !session) return next(httpError(404, 'Session not found'))
 
