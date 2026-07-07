@@ -11,6 +11,28 @@ export const authRouter = Router()
 const BCRYPT_COST = 12
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+// Static dummy hash used to keep the unknown-email path's timing comparable
+// to the wrong-password path — otherwise skipping bcrypt.compare entirely
+// when the email doesn't exist leaks account existence via response time.
+// Generated once with: bcrypt.hashSync('not-a-real-password', 12)
+const DUMMY_HASH = '$2b$12$fLW7OVDfaQDuxoDkJ7EWWOiDMJL77XGv/x.iF1N4el6P300rNwPsq'
+
+// Postgres unique_violation error code
+const PG_UNIQUE_VIOLATION = '23505'
+
+// isUniqueViolation — the primary signal is the Postgres error code, but
+// supabase-js's error shape for constraint violations isn't formally
+// guaranteed across versions/transports (e.g. PostgREST can surface the
+// code differently, or omit it, while still describing the conflict in
+// `message`/`details`). Fall back to a text match on the unique-constraint
+// signal so the 409 mapping stays robust either way.
+function isUniqueViolation(error) {
+  if (!error) return false
+  if (error.code === PG_UNIQUE_VIOLATION) return true
+  const text = `${error.message ?? ''} ${error.details ?? ''}`.toLowerCase()
+  return text.includes('duplicate key') || text.includes('unique constraint') || text.includes('already exists')
+}
+
 // POST /api/auth/login — always open.
 authRouter.post('/login', async (req, res, next) => {
   const { email, password } = req.body ?? {}
@@ -23,12 +45,13 @@ authRouter.post('/login', async (req, res, next) => {
     .eq('email', email)
     .single()
 
-  // Unknown email and wrong password return the identical response —
-  // no email enumeration.
-  if (error || !admin) return next(httpError(401, 'Invalid email or password'))
+  // Unknown email and wrong password return the identical response AND take
+  // comparable time — when the email isn't found we still run bcrypt.compare
+  // against a static dummy hash so the response time doesn't leak whether
+  // the email exists (timing side-channel / email enumeration).
+  const passwordMatches = await bcrypt.compare(password, admin?.password_hash ?? DUMMY_HASH)
 
-  const passwordMatches = await bcrypt.compare(password, admin.password_hash)
-  if (!passwordMatches) return next(httpError(401, 'Invalid email or password'))
+  if (error || !admin || !passwordMatches) return next(httpError(401, 'Invalid email or password'))
 
   const token = signToken({ sub: admin.id, email: admin.email })
 
@@ -36,21 +59,25 @@ authRouter.post('/login', async (req, res, next) => {
 })
 
 // POST /api/auth/register — bootstrap-first, NOT open.
-// Allowed only when AUTH_LEGACY_TOKEN_ENABLED is truthy AND either:
-//   - the request carries a valid legacy ADMIN_TOKEN header, OR
-//   - the request is from an already-authenticated admin (jwt bearer token)
+// Allowed via either:
+//   - an already-authenticated admin (valid jwt bearer token) — always
+//     allowed, independent of AUTH_LEGACY_TOKEN_ENABLED, since disabling
+//     that flag is meant to retire the legacy break-glass token, not lock
+//     out admin creation entirely for admins who already have accounts.
+//   - a valid legacy ADMIN_TOKEN header — only when AUTH_LEGACY_TOKEN_ENABLED
+//     is truthy (the break-glass path for bootstrapping the very first admin).
 authRouter.post('/register', async (req, res, next) => {
-  if (!process.env.AUTH_LEGACY_TOKEN_ENABLED) {
-    return next(httpError(403, 'Registration is disabled'))
-  }
+  const authHeader = req.headers['authorization']
 
-  const hasValidLegacyToken = legacyAdminTokenMatches(req)
-
-  if (!hasValidLegacyToken) {
+  if (authHeader && authHeader.startsWith('Bearer ')) {
     return requireAuth(req, res, (err) => {
       if (err) return next(err)
       createAdmin(req, res, next)
     })
+  }
+
+  if (!process.env.AUTH_LEGACY_TOKEN_ENABLED || !legacyAdminTokenMatches(req)) {
+    return next(httpError(403, 'Registration is disabled'))
   }
 
   return createAdmin(req, res, next)
@@ -77,6 +104,11 @@ async function createAdmin(req, res, next) {
   if (!email || !EMAIL_RE.test(email)) return next(httpError(400, 'A valid email is required'))
   if (!password) return next(httpError(400, 'password is required'))
 
+  // Note: the pre-check below is a UX fast path only, NOT the source of
+  // truth for uniqueness — it has a TOCTOU race (two concurrent registers
+  // with the same email can both pass this check). The `admins.email`
+  // UNIQUE constraint is the actual guard; its violation is caught below
+  // and mapped to 409 instead of leaking a raw 500.
   const { data: existing } = await supabase
     .from('admins')
     .select('id')
@@ -93,7 +125,12 @@ async function createAdmin(req, res, next) {
     .select('id, email')
     .single()
 
-  if (error) return next(error)
+  if (error) {
+    if (isUniqueViolation(error)) {
+      return next(httpError(409, 'An admin with this email already exists'))
+    }
+    return next(error)
+  }
 
   res.status(201).json({ admin: { id: admin.id, email: admin.email } })
 }
