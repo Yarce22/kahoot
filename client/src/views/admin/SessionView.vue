@@ -212,6 +212,7 @@ function initSession(currentPin) {
 
   const socket = connect({ token: auth.token })
 
+  socket.off('connect')
   socket.off('player-joined')
   socket.off('player-left')
   socket.off('game-started')
@@ -221,13 +222,28 @@ function initSession(currentPin) {
   socket.off('game-end')
   socket.off('session-error')
 
-  socket.emit('host:join-session', { pin: currentPin }, (ack) => {
-    if (ack?.error) {
-      errorMsg.value = `No se pudo unir a la sesión: ${ack.error}`
-      return
-    }
-    players.value = ack?.players || []
-  })
+  // (Re)join the session on every connection. On a reconnect socket.io opens
+  // a fresh server-side socket (new id): the host is re-authenticated by the
+  // handshake, but authorizedSessionId is unset and it is no longer in the
+  // session room. Re-emitting host:join-session re-authorizes the socket and
+  // re-adds it to the room — otherwise a dropped-and-restored connection
+  // leaves the host unable to control the game (next-question would 401).
+  function joinSession() {
+    socket.emit('host:join-session', { pin: currentPin }, (ack) => {
+      if (ack?.error) {
+        errorMsg.value = `No se pudo unir a la sesión: ${ack.error}`
+        return
+      }
+      errorMsg.value = ''
+      players.value = ack?.players || []
+    })
+  }
+
+  // 'connect' fires on the initial connection and on every reconnect. If the
+  // socket is already connected (reused from another view) it won't fire, so
+  // join immediately in that case.
+  socket.on('connect', joinSession)
+  if (socket.connected) joinSession()
 
   socket.on('player-joined', ({ nickname }) => {
     if (!players.value.find(p => p.nickname === nickname)) {
@@ -275,6 +291,7 @@ watch(pin, (newPin) => { if (newPin) initSession(newPin) }, { immediate: true })
 onUnmounted(() => {
   const socket = getSocket()
   if (!socket) return
+  socket.off('connect')
   socket.off('player-joined')
   socket.off('player-left')
   socket.off('game-started')
