@@ -17,11 +17,14 @@ function normalize(str) {
     .trim()
 }
 
-// parseKeywords — split the stored CSV into normalized, non-empty keywords.
+// parseKeywords — split the stored answer into normalized, non-empty
+// keywords. Commas AND whitespace are both treated as separators, so the
+// answer works whether keywords are entered "500, lechuga, tomate" or
+// "500 lechuga tomate" — otherwise a space-separated entry collapses into a
+// single keyword that only matches that exact phrase in that exact order.
 export function parseKeywords(csv) {
-  return (csv ?? '')
-    .split(',')
-    .map(normalize)
+  return normalize(csv)
+    .split(/[\s,]+/)
     .filter(Boolean)
 }
 
