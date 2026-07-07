@@ -1,27 +1,9 @@
 import he from 'he'
-
-function levenshtein(a, b) {
-  const m = a.length, n = b.length
-  const dp = Array.from({ length: m + 1 }, (_, i) =>
-    Array.from({ length: n + 1 }, (_, j) => i === 0 ? j : j === 0 ? i : 0)
-  )
-  for (let i = 1; i <= m; i++)
-    for (let j = 1; j <= n; j++)
-      dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1])
-  return dp[m][n]
-}
-
-function fuzzyMatch(submitted, correct) {
-  const s = submitted.trim().toLowerCase()
-  const c = correct.trim().toLowerCase()
-  if (s === c) return true
-  const threshold = Math.max(2, Math.floor(c.length * 0.2))
-  return levenshtein(s, c) <= threshold
-}
 import supabase from '../lib/supabase.js'
 import { getIO } from '../lib/io.js'
 import { activeGames } from '../runtime/activeGames.js'
 import { startQuestion, endQuestion, endGame } from '../domain/gameEngine.js'
+import { matchOpenAnswer } from '../domain/openAnswer.js'
 import { hostAuthMiddleware, jwtHostAuthMiddleware } from './hostAuth.js'
 
 export function registerSocketHandlers(io) {
@@ -151,9 +133,10 @@ async function handleSubmitAnswer(socket, data, ack) {
     isCorrect = option?.is_correct ?? false
     selectedOptionId = answerId
   } else if (question.type === 'open' && answerText) {
+    // The correct option's text holds the comma-separated required keywords.
     const correctOption = question.options?.find(o => o.is_correct)
     if (correctOption) {
-      isCorrect = fuzzyMatch(answerText, correctOption.text)
+      isCorrect = matchOpenAnswer(answerText, correctOption.text)
     }
   }
 

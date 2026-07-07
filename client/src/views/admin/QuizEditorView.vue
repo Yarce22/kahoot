@@ -85,7 +85,7 @@
                 Correcto: <strong>{{ (q.options || []).find(o => o.is_correct)?.text ?? '—' }}</strong>
               </p>
               <p v-else-if="q.type === 'open'" class="correct-answer-note">
-                Respuesta correcta: <strong>{{ (q.options || []).find(o => o.is_correct)?.text ?? '—' }}</strong>
+                Palabras clave: <strong>{{ (q.options || []).find(o => o.is_correct)?.text ?? '—' }}</strong>
               </p>
 
               <!-- Question actions -->
@@ -133,8 +133,8 @@
 
                 <template v-else-if="editQuestionForm.type === 'open'">
                   <div class="field-group" style="grid-column: 1 / -1;">
-                    <label class="field-label-sm">Respuesta correcta</label>
-                    <input v-model="editOpenCorrect" class="input-sm" placeholder="Respuesta correcta" required />
+                    <label class="field-label-sm">Palabras clave (separadas por coma)</label>
+                    <input v-model="editOpenCorrect" class="input-sm" placeholder="500, lechuga, tomate, cebolla" required />
                   </div>
                 </template>
               </div>
@@ -222,19 +222,19 @@
             </div>
           </template>
 
-          <!-- Open: correct answer -->
+          <!-- Open: required keywords -->
           <template v-else-if="newQuestion.type === 'open'">
             <div style="margin-bottom: 12px;">
-              <label class="field-label-sm" for="new-open-correct" style="margin-bottom: 8px; display: block;">Respuesta correcta</label>
+              <label class="field-label-sm" for="new-open-correct" style="margin-bottom: 8px; display: block;">Palabras clave (separadas por coma)</label>
               <input
                 id="new-open-correct"
                 v-model="newOpenCorrect"
                 class="input-sm"
-                placeholder="ej. Buenos Aires"
+                placeholder="ej. 500, lechuga, tomate, cebolla"
                 required
               />
               <p style="color: var(--text-muted); font-size: 12px; margin-top: 6px; font-family: 'Nunito', sans-serif;">
-                Acepta pequeñas variaciones ortográficas
+                La respuesta es correcta si contiene todas estas palabras (ignora mayúsculas y acentos).
               </p>
             </div>
           </template>
