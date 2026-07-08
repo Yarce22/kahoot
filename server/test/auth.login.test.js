@@ -11,7 +11,7 @@ const { app } = await import('../src/index.js')
 const { default: request } = await import('supertest')
 
 const PASSWORD = 'correct-password'
-const ADMIN = { id: 'admin-1', email: 'a@example.com', password_hash: bcrypt.hashSync(PASSWORD, 12) }
+const ADMIN = { id: 'admin-1', email: 'a@example.com', password_hash: bcrypt.hashSync(PASSWORD, 12), role: 'admin', is_active: true }
 
 test('POST /api/auth/login — returns a JWT on correct credentials', async () => {
   const restore = mockSupabaseSequence([
@@ -24,7 +24,7 @@ test('POST /api/auth/login — returns a JWT on correct credentials', async () =
 
     assert.equal(res.status, 200)
     assert.equal(typeof res.body.token, 'string')
-    assert.deepEqual(res.body.admin, { id: ADMIN.id, email: ADMIN.email })
+    assert.deepEqual(res.body.admin, { id: ADMIN.id, email: ADMIN.email, role: ADMIN.role })
   } finally {
     restore()
   }

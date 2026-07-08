@@ -55,6 +55,31 @@ test('socket handshake — invalid JWT is rejected at connection', async () => {
   }
 })
 
+test('socket handshake — valid JWT for a deactivated admin is rejected at connection', async () => {
+  const admin = { id: 'admin-1', email: 'a@example.com', role: 'admin', is_active: false }
+  const token = signToken({ sub: admin.id, email: admin.email })
+
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: admin, error: null } } // jwtHostAuthMiddleware
+  ])
+
+  const port = await listen()
+  const client = ioClient(`http://localhost:${port}`, {
+    auth: { token },
+    reconnection: false
+  })
+  try {
+    await new Promise((resolve, reject) => {
+      client.on('connect', () => reject(new Error('a deactivated admin must not connect as host')))
+      client.on('connect_error', () => resolve())
+    })
+  } finally {
+    restore()
+    client.close()
+    await closeServer()
+  }
+})
+
 // NOTE / assumption: a socket with NO token at all still connects — that is
 // required behavior for anonymous players (join-game never authenticates).
 // "Missing JWT -> rejected" is therefore verified at the HOST-ACTION layer
@@ -81,8 +106,45 @@ test('socket handshake — missing token connects as a non-host (host actions ar
   }
 })
 
+test('socket handshake — a superadmin can host another admin session', async () => {
+  const superadmin = { id: 'super-1', email: 'boss@example.com', role: 'superadmin', is_active: true }
+  const token = signToken({ sub: superadmin.id, email: superadmin.email })
+  const pin = '123458'
+
+  activeGames.set(pin, makeGame('someone-elses-quiz'))
+
+  // Only the auth lookup queries supabase — verifyHostOwnership short-circuits
+  // for a superadmin without hitting the quizzes table.
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: superadmin, error: null } } // jwtHostAuthMiddleware
+  ])
+
+  const port = await listen()
+  const client = ioClient(`http://localhost:${port}`, {
+    auth: { token },
+    reconnection: false
+  })
+  try {
+    await new Promise((resolve, reject) => {
+      client.on('connect', resolve)
+      client.on('connect_error', reject)
+    })
+
+    const ack = await new Promise((resolve) => {
+      client.emit('host:join-session', { pin }, resolve)
+    })
+
+    assert.equal(ack.ok, true)
+  } finally {
+    restore()
+    activeGames.delete(pin)
+    client.close()
+    await closeServer()
+  }
+})
+
 test('socket handshake — valid JWT but NOT the quiz owner is rejected on host:join-session', async () => {
-  const admin = { id: 'admin-1', email: 'a@example.com' }
+  const admin = { id: 'admin-1', email: 'a@example.com', role: 'admin', is_active: true }
   const otherOwnerId = 'admin-2'
   const token = signToken({ sub: admin.id, email: admin.email })
   const pin = '123457'
@@ -119,7 +181,7 @@ test('socket handshake — valid JWT but NOT the quiz owner is rejected on host:
 })
 
 test('socket handshake — valid JWT + owned session is accepted', async () => {
-  const admin = { id: 'admin-1', email: 'a@example.com' }
+  const admin = { id: 'admin-1', email: 'a@example.com', role: 'admin', is_active: true }
   const token = signToken({ sub: admin.id, email: admin.email })
   const pin = '123456'
 

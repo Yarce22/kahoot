@@ -46,13 +46,15 @@ export async function jwtHostAuthMiddleware(socket, next) {
 
   const { data: admin, error } = await supabase
     .from('admins')
-    .select('id, email')
+    .select('id, email, role, is_active')
     .eq('id', payload.sub)
     .single()
 
-  if (error || !admin) return next(new Error('UNAUTHORIZED'))
+  // Read fresh so a deactivated admin loses host access immediately, even
+  // with a still-valid token (mirrors requireAuth on the HTTP side).
+  if (error || !admin || !admin.is_active) return next(new Error('UNAUTHORIZED'))
 
-  socket.admin = { id: admin.id, email: admin.email }
+  socket.admin = { id: admin.id, email: admin.email, role: admin.role }
   socket.isHost = true
   next()
 }

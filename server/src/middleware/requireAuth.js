@@ -22,12 +22,14 @@ export async function requireAuth(req, res, next) {
 
   const { data: admin, error } = await supabase
     .from('admins')
-    .select('id, email')
+    .select('id, email, role, is_active')
     .eq('id', payload.sub)
     .single()
 
-  if (error || !admin) return next(httpError(401, 'Invalid or expired token'))
+  // Read fresh every request so a role change or deactivation takes effect
+  // immediately, even while a previously-issued token is still unexpired.
+  if (error || !admin || !admin.is_active) return next(httpError(401, 'Invalid or expired token'))
 
-  req.admin = { id: admin.id, email: admin.email }
+  req.admin = { id: admin.id, email: admin.email, role: admin.role }
   next()
 }

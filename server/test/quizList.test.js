@@ -11,7 +11,7 @@ const { app } = await import('../src/index.js')
 const { signToken } = await import('../src/lib/jwt.js')
 const { default: request } = await import('supertest')
 
-const ADMIN_A = { id: 'admin-a', email: 'a@example.com' }
+const ADMIN_A = { id: 'admin-a', email: 'a@example.com', role: 'admin', is_active: true }
 
 test('GET /api/quizzes — each quiz carries its question count', async () => {
   const token = signToken({ sub: ADMIN_A.id, email: ADMIN_A.email })
