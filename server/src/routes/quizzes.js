@@ -43,10 +43,12 @@ quizzesRouter.post('/', requireAdmin, authGate, async (req, res, next) => {
 quizzesRouter.get('/', requireAdmin, authGate, async (req, res, next) => {
   let query = supabase
     .from('quizzes')
-    .select('id, title, description, created_at, questions(count)')
+    .select('id, title, description, created_at, questions(count), owner:admins(id, email)')
     .order('created_at', { ascending: false })
 
-  if (req.admin) {
+  // A superadmin lists every admin's quizzes; a plain admin only its own.
+  // Legacy mode (no req.admin) keeps listing all.
+  if (req.admin && req.admin.role !== 'superadmin') {
     query = query.eq('owner_id', req.admin.id)
   }
 
@@ -56,10 +58,12 @@ quizzesRouter.get('/', requireAdmin, authGate, async (req, res, next) => {
 
   // questions(count) comes back as a nested aggregate array: [{ count: N }].
   // Flatten it to a plain questionCount and drop the nested array so the
-  // list shape stays clean for the client.
-  const quizzes = (data ?? []).map(({ questions, ...quiz }) => ({
+  // list shape stays clean for the client. owner is surfaced so the
+  // superadmin UI can show whose quiz each one is.
+  const quizzes = (data ?? []).map(({ questions, owner, ...quiz }) => ({
     ...quiz,
-    questionCount: questions?.[0]?.count ?? 0
+    questionCount: questions?.[0]?.count ?? 0,
+    owner: owner ?? null
   }))
 
   res.json(quizzes)
