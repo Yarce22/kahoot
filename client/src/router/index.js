@@ -19,6 +19,7 @@ const routes = [
   { path: '/admin/quizzes/new', component: () => import('../views/admin/QuizEditorView.vue'), beforeEnter: requireAdmin },
   { path: '/admin/quizzes/:id', component: () => import('../views/admin/QuizEditorView.vue'), beforeEnter: requireAdmin },
   { path: '/admin/quizzes/:id/sessions', component: () => import('../views/admin/QuizSessionsView.vue'), beforeEnter: requireAdmin },
+  { path: '/admin/quizzes/:id/sessions/:pin', component: () => import('../views/admin/SessionResultsView.vue'), beforeEnter: requireAdmin },
   { path: '/admin/sessions/:pin', component: () => import('../views/admin/SessionView.vue'), beforeEnter: requireAdmin },
 ]
 
