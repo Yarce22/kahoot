@@ -20,7 +20,9 @@ export const useAuthStore = defineStore('auth', {
     admin: loadAdmin()
   }),
   getters: {
-    isLoggedIn: (state) => !!state.token
+    isLoggedIn: (state) => !!state.token,
+    role: (state) => state.admin?.role ?? null,
+    isSuperadmin: (state) => state.admin?.role === 'superadmin'
   },
   actions: {
     // login — store the signed JWT and the admin identity returned by

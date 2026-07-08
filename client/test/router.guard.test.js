@@ -34,4 +34,24 @@ describe('admin route guard', () => {
     await router.isReady()
     expect(router.currentRoute.value.path).toBe('/admin/quizzes/quiz-1/sessions')
   })
+
+  it('redirects the admins route to login when logged out', async () => {
+    await router.push('/admin/admins')
+    await router.isReady()
+    expect(router.currentRoute.value.path).toBe('/admin/login')
+  })
+
+  it('bounces a plain admin off the admins route to their quiz list', async () => {
+    useAuthStore().login('jwt', { id: 'a1', email: 'a@x.com', role: 'admin' })
+    await router.push('/admin/admins')
+    await router.isReady()
+    expect(router.currentRoute.value.path).toBe('/admin/quizzes')
+  })
+
+  it('allows a superadmin onto the admins route', async () => {
+    useAuthStore().login('jwt', { id: 's1', email: 'boss@x.com', role: 'superadmin' })
+    await router.push('/admin/admins')
+    await router.isReady()
+    expect(router.currentRoute.value.path).toBe('/admin/admins')
+  })
 })

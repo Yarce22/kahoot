@@ -55,4 +55,19 @@ describe('auth store', () => {
     expect(auth.admin).toBeNull()
     expect(auth.token).toBe('persisted')
   })
+
+  it('exposes role and isSuperadmin from the admin identity', () => {
+    const auth = useAuthStore()
+    auth.login('jwt', { id: 's1', email: 'boss@x.com', role: 'superadmin' })
+    expect(auth.role).toBe('superadmin')
+    expect(auth.isSuperadmin).toBe(true)
+  })
+
+  it('isSuperadmin is false for a plain admin and when logged out', () => {
+    const auth = useAuthStore()
+    expect(auth.isSuperadmin).toBe(false)
+    auth.login('jwt', { id: 'a1', email: 'a@x.com', role: 'admin' })
+    expect(auth.role).toBe('admin')
+    expect(auth.isSuperadmin).toBe(false)
+  })
 })
