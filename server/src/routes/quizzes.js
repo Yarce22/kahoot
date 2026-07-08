@@ -105,6 +105,35 @@ quizzesRouter.get('/:id', requireAdmin, authGate, ownerGate(), async (req, res, 
   res.json(result)
 })
 
+// GET /api/quizzes/:id/sessions — session history for a quiz (admin only,
+// must own the quiz). Lists finished sessions newest-first, each with its
+// player count, so the admin can revisit past games and open their results.
+quizzesRouter.get('/:id/sessions', requireAdmin, authGate, ownerGate(), async (req, res, next) => {
+  const { id } = req.params
+
+  const { data, error } = await supabase
+    .from('game_sessions')
+    .select('id, pin, status, started_at, ended_at, created_at, players(count)')
+    .eq('quiz_id', id)
+    .eq('status', 'finished')
+    .order('created_at', { ascending: false })
+
+  if (error) return next(httpError(500, 'Failed to fetch sessions'))
+
+  const sessions = (data ?? []).map(s => ({
+    id: s.id,
+    pin: s.pin,
+    status: s.status,
+    startedAt: s.started_at,
+    endedAt: s.ended_at,
+    createdAt: s.created_at,
+    // players(count) comes back as a nested aggregate array: [{ count: N }].
+    playerCount: s.players?.[0]?.count ?? 0
+  }))
+
+  res.json({ sessions })
+})
+
 // PUT /api/quizzes/:id — update quiz
 quizzesRouter.put('/:id', requireAdmin, authGate, ownerGate(), async (req, res, next) => {
   const { id } = req.params
