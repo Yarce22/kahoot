@@ -59,6 +59,17 @@ test('matchOpenAnswer — multi-word keywords still match in any order relative 
   assert.equal(matchOpenAnswer('stracciatella y tomate cherry', kw), true)
 })
 
+test('matchOpenAnswer — a stored keyword with trailing punctuation still matches', () => {
+  // A key phrase saved as "stracciatella." (trailing period) must not require
+  // the player to type the period too.
+  assert.equal(matchOpenAnswer('me encanta la stracciatella', 'stracciatella.'), true)
+  assert.equal(matchOpenAnswer('lechuga, tomate y cebolla', '¡lechuga!, tomate, cebolla.'), true)
+})
+
+test('parseKeywords — trims surrounding punctuation from each keyword', () => {
+  assert.deepEqual(parseKeywords('¡lechuga!, tomate., "cebolla"'), ['lechuga', 'tomate', 'cebolla'])
+})
+
 test('parseKeywords — splits on commas only (keywords may be multi-word phrases)', () => {
   assert.deepEqual(parseKeywords(' 500 , Lechuga ,, TOMATE '), ['500', 'lechuga', 'tomate'])
   assert.deepEqual(parseKeywords('200, tomate cherry, stracciatella'), ['200', 'tomate cherry', 'stracciatella'])

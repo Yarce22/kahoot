@@ -14,7 +14,9 @@ function normalize(str) {
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
-    .trim()
+    // Trim surrounding whitespace AND punctuation so a stray "stracciatella."
+    // (trailing period) still matches "stracciatella" in the answer.
+    .replace(/^[\s\p{P}]+|[\s\p{P}]+$/gu, '')
 }
 
 // parseKeywords — split the stored answer into normalized, non-empty
