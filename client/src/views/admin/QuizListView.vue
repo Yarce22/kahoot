@@ -32,7 +32,7 @@
 
         <h2 class="quiz-card-title">{{ quiz.title }}</h2>
         <p class="quiz-card-meta">
-          {{ quiz.questions?.length ?? 0 }} pregunta(s)
+          {{ quiz.questionCount ?? 0 }} pregunta(s)
         </p>
 
         <!-- Actions -->

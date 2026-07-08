@@ -43,7 +43,7 @@ quizzesRouter.post('/', requireAdmin, authGate, async (req, res, next) => {
 quizzesRouter.get('/', requireAdmin, authGate, async (req, res, next) => {
   let query = supabase
     .from('quizzes')
-    .select('id, title, description, created_at')
+    .select('id, title, description, created_at, questions(count)')
     .order('created_at', { ascending: false })
 
   if (req.admin) {
@@ -54,7 +54,15 @@ quizzesRouter.get('/', requireAdmin, authGate, async (req, res, next) => {
 
   if (error) return next(error)
 
-  res.json(data)
+  // questions(count) comes back as a nested aggregate array: [{ count: N }].
+  // Flatten it to a plain questionCount and drop the nested array so the
+  // list shape stays clean for the client.
+  const quizzes = (data ?? []).map(({ questions, ...quiz }) => ({
+    ...quiz,
+    questionCount: questions?.[0]?.count ?? 0
+  }))
+
+  res.json(quizzes)
 })
 
 // GET /api/quizzes/:id — get quiz with questions and options
