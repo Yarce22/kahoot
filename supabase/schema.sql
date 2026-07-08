@@ -4,6 +4,12 @@
 -- ============================================================
 
 -- admins
+-- NOTE: new admins default to role='admin'. On a fresh install there is no
+-- superadmin until you promote one — and admin management is superadmin-only,
+-- so bootstrap the first one by hand after creating it:
+--   UPDATE admins SET role = 'superadmin'
+--   WHERE id = (SELECT id FROM admins ORDER BY created_at ASC, id ASC LIMIT 1);
+-- (The migration path handles this automatically — see migration 004.)
 CREATE TABLE admins (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT UNIQUE NOT NULL,

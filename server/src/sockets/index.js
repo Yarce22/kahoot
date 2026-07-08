@@ -186,6 +186,10 @@ async function verifyHostOwnership(socket, game) {
   if (!socket.admin) return true
   if (!game) return false
 
+  // Superadmins host any admin's game — mirrors the HTTP requireQuizOwner
+  // bypass so the "iniciar any quiz" flow works over sockets too.
+  if (socket.admin.role === 'superadmin') return true
+
   const { data: quiz, error } = await supabase
     .from('quizzes')
     .select('owner_id')

@@ -149,6 +149,18 @@ test('PATCH /api/admins/:id — cannot demote the last active superadmin (409)',
   }
 })
 
+// --- register no longer creates admins for authenticated JWTs ---
+
+test('POST /api/auth/register — a JWT (non break-glass) cannot create admins (403)', async () => {
+  // With AUTH_LEGACY_TOKEN_ENABLED unset, register is break-glass only; a
+  // Bearer token must not slip past the superadmin-only /api/admins gate.
+  const res = await request(app)
+    .post('/api/auth/register')
+    .set('Authorization', `Bearer ${superToken()}`)
+    .send({ email: 'sneaky@x.com', password: 'pw12345' })
+  assert.equal(res.status, 403)
+})
+
 // --- superadmin bypasses quiz ownership ---
 
 test('GET /api/quizzes/:id — a superadmin can open another admin quiz', async () => {

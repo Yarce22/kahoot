@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { useAdminApi } from '../composables/useAdminApi.js'
+import { useAuthStore } from './auth.js'
 
 // admins store — superadmin-only admin management. Backs the Administradores
 // view: list every admin, create new ones, and change role / active status.
@@ -35,6 +36,10 @@ export const useAdminsStore = defineStore('admins', {
       const updated = await api.patch(`/api/admins/${id}`, changes)
       const idx = this.admins.findIndex(a => a.id === id)
       if (idx !== -1) this.admins[idx] = { ...this.admins[idx], ...updated }
+      // If a superadmin just changed their OWN role/status, refresh the auth
+      // identity so isSuperadmin (nav, route guard) reflects it immediately.
+      const auth = useAuthStore()
+      if (auth.admin?.id === id) auth.setAdmin({ ...auth.admin, ...updated })
       return updated
     }
   }

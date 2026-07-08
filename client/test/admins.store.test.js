@@ -9,6 +9,7 @@ vi.mock('../src/composables/useAdminApi.js', () => ({
 }))
 
 import { useAdminsStore } from '../src/stores/admins.js'
+import { useAuthStore } from '../src/stores/auth.js'
 
 describe('admins store', () => {
   beforeEach(() => {
@@ -48,5 +49,32 @@ describe('admins store', () => {
     const store = useAdminsStore()
     await store.fetchAdmins()
     expect(store.error).toBe('boom')
+  })
+
+  it('syncs the auth identity when a superadmin changes their own role', async () => {
+    localStorage.clear()
+    const auth = useAuthStore()
+    auth.login('jwt', { id: 'me', email: 'me@x.com', role: 'superadmin' })
+    const store = useAdminsStore()
+    store.admins = [{ id: 'me', email: 'me@x.com', role: 'superadmin', is_active: true }]
+    patch.mockResolvedValue({ id: 'me', email: 'me@x.com', role: 'admin', is_active: true })
+
+    await store.updateAdmin('me', { role: 'admin' })
+
+    expect(auth.isSuperadmin).toBe(false)
+    expect(JSON.parse(localStorage.getItem('authAdmin')).role).toBe('admin')
+  })
+
+  it('leaves the auth identity untouched when changing a different admin', async () => {
+    localStorage.clear()
+    const auth = useAuthStore()
+    auth.login('jwt', { id: 'me', email: 'me@x.com', role: 'superadmin' })
+    const store = useAdminsStore()
+    store.admins = [{ id: 'other', email: 'o@x.com', role: 'admin', is_active: true }]
+    patch.mockResolvedValue({ id: 'other', email: 'o@x.com', role: 'superadmin', is_active: true })
+
+    await store.updateAdmin('other', { role: 'superadmin' })
+
+    expect(auth.isSuperadmin).toBe(true)
   })
 })

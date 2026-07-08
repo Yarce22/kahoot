@@ -34,6 +34,14 @@ export const useAuthStore = defineStore('auth', {
       if (admin) localStorage.setItem(ADMIN_KEY, JSON.stringify(admin))
       else localStorage.removeItem(ADMIN_KEY)
     },
+    // setAdmin — replace the cached identity (and re-persist) without touching
+    // the token. Used when the current admin's own role/status changes so
+    // getters like isSuperadmin don't go stale until the next reload.
+    setAdmin(admin) {
+      this.admin = admin ?? null
+      if (admin) localStorage.setItem(ADMIN_KEY, JSON.stringify(admin))
+      else localStorage.removeItem(ADMIN_KEY)
+    },
     logout() {
       this.token = ''
       this.admin = null
