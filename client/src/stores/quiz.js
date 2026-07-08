@@ -62,6 +62,18 @@ export const useQuizStore = defineStore('quiz', {
       const api = useAdminApi()
       return api.post('/api/sessions', { quizId })
     },
+    // fetchQuizSessions — session history for a quiz: finished sessions
+    // newest-first, each with its player count.
+    async fetchQuizSessions(quizId) {
+      const api = useAdminApi()
+      const { sessions } = await api.get(`/api/quizzes/${quizId}/sessions`)
+      return sessions
+    },
+    // fetchSessionResults — leaderboard + flat answer rows for one session.
+    async fetchSessionResults(pin) {
+      const api = useAdminApi()
+      return api.get(`/api/sessions/${pin}/results`)
+    },
     async createQuestion(quizId, data) {
       const api = useAdminApi()
       const q = await api.post(`/api/quizzes/${quizId}/questions`, data)

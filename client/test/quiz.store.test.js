@@ -2,8 +2,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
 const post = vi.hoisted(() => vi.fn())
+const get = vi.hoisted(() => vi.fn())
 vi.mock('../src/composables/useAdminApi.js', () => ({
-  useAdminApi: () => ({ post, get: vi.fn(), put: vi.fn(), del: vi.fn() })
+  useAdminApi: () => ({ post, get, put: vi.fn(), del: vi.fn() })
 }))
 
 import { useQuizStore } from '../src/stores/quiz.js'
@@ -59,5 +60,34 @@ describe('quiz store createSession', () => {
 
     expect(post).toHaveBeenCalledWith('/api/sessions', { quizId: 'quiz-1' })
     expect(res).toEqual({ pin: '123456' })
+  })
+})
+
+describe('quiz store session history', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    get.mockReset()
+  })
+
+  it('fetchQuizSessions unwraps the { sessions } payload', async () => {
+    const sessions = [{ id: 's1', pin: '111111', playerCount: 8 }]
+    get.mockResolvedValue({ sessions })
+    const store = useQuizStore()
+
+    const res = await store.fetchQuizSessions('quiz-1')
+
+    expect(get).toHaveBeenCalledWith('/api/quizzes/quiz-1/sessions')
+    expect(res).toEqual(sessions)
+  })
+
+  it('fetchSessionResults returns the raw results payload for a pin', async () => {
+    const payload = { leaderboard: [], results: [] }
+    get.mockResolvedValue(payload)
+    const store = useQuizStore()
+
+    const res = await store.fetchSessionResults('111111')
+
+    expect(get).toHaveBeenCalledWith('/api/sessions/111111/results')
+    expect(res).toBe(payload)
   })
 })

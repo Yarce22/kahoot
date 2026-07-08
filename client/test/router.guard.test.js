@@ -21,4 +21,17 @@ describe('admin route guard', () => {
     await router.isReady()
     expect(router.currentRoute.value.path).toBe('/admin/quizzes')
   })
+
+  it('guards the session history route when logged out', async () => {
+    await router.push('/admin/quizzes/quiz-1/sessions')
+    await router.isReady()
+    expect(router.currentRoute.value.path).toBe('/admin/login')
+  })
+
+  it('allows the session history route when logged in', async () => {
+    useAuthStore().login('jwt', { id: 'a1', email: 'a@x.com' })
+    await router.push('/admin/quizzes/quiz-1/sessions')
+    await router.isReady()
+    expect(router.currentRoute.value.path).toBe('/admin/quizzes/quiz-1/sessions')
+  })
 })
