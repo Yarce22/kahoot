@@ -101,9 +101,10 @@ test('POST /api/admins — invalid role is rejected (400)', async () => {
 
 test('PATCH /api/admins/:id — promotes a plain admin to superadmin', async () => {
   const restore = mockSupabaseSequence([
-    { table: 'admins', result: { data: SUPER, error: null } },                                             // requireAuth
-    { table: 'admins', result: { data: { id: PLAIN.id, role: 'admin', is_active: true }, error: null } },  // target fetch
-    { table: 'admins', result: { data: { id: PLAIN.id, email: PLAIN.email, role: 'superadmin', is_active: true }, error: null } } // update
+    { table: 'admins', result: { data: SUPER, error: null } }, // requireAuth
+    // update_admin_role_status returns the full row (incl. password_hash) —
+    // the handler must strip it to the safe fields.
+    { rpc: 'update_admin_role_status', result: { data: { id: PLAIN.id, email: PLAIN.email, password_hash: 'secret-hash', role: 'superadmin', is_active: true }, error: null } }
   ])
   try {
     const res = await request(app)
@@ -112,6 +113,7 @@ test('PATCH /api/admins/:id — promotes a plain admin to superadmin', async () 
       .send({ role: 'superadmin' })
     assert.equal(res.status, 200)
     assert.equal(res.body.role, 'superadmin')
+    assert.equal(res.body.password_hash, undefined)
   } finally {
     restore()
   }
@@ -134,9 +136,9 @@ test('PATCH /api/admins/:id — cannot deactivate your own account (400)', async
 
 test('PATCH /api/admins/:id — cannot demote the last active superadmin (409)', async () => {
   const restore = mockSupabaseSequence([
-    { table: 'admins', result: { data: SUPER, error: null } },                                              // requireAuth
-    { table: 'admins', result: { data: { id: SUPER.id, role: 'superadmin', is_active: true }, error: null } }, // target fetch (self)
-    { table: 'admins', result: { count: 1, data: null, error: null } }                                       // active-superadmin count
+    { table: 'admins', result: { data: SUPER, error: null } }, // requireAuth
+    // The DB function enforces the invariant and raises; the API maps it to 409.
+    { rpc: 'update_admin_role_status', result: { data: null, error: { message: 'last_active_superadmin' } } }
   ])
   try {
     const res = await request(app)
@@ -144,6 +146,22 @@ test('PATCH /api/admins/:id — cannot demote the last active superadmin (409)',
       .set('Authorization', `Bearer ${superToken()}`)
       .send({ role: 'admin' })
     assert.equal(res.status, 409)
+  } finally {
+    restore()
+  }
+})
+
+test('PATCH /api/admins/:id — unknown admin id maps to 404', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } }, // requireAuth
+    { rpc: 'update_admin_role_status', result: { data: null, error: { message: 'admin_not_found' } } }
+  ])
+  try {
+    const res = await request(app)
+      .patch('/api/admins/does-not-exist')
+      .set('Authorization', `Bearer ${superToken()}`)
+      .send({ role: 'admin' })
+    assert.equal(res.status, 404)
   } finally {
     restore()
   }

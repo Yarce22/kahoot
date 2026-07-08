@@ -89,3 +89,39 @@ CREATE INDEX idx_player_answers_player ON player_answers(player_id);
 CREATE INDEX idx_player_answers_question ON player_answers(question_id);
 CREATE INDEX idx_questions_quiz ON questions(quiz_id, order_index);
 CREATE INDEX idx_quizzes_owner ON quizzes(owner_id);
+
+-- Race-safe admin role/status update (see migration 005). Serializes
+-- concurrent changes with an advisory lock so the system can never be left
+-- with zero active superadmins. Raises 'admin_not_found' / 'last_active_superadmin'.
+CREATE OR REPLACE FUNCTION update_admin_role_status(
+  target_id uuid,
+  new_role text DEFAULT NULL,
+  new_active boolean DEFAULT NULL
+)
+RETURNS admins
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  result admins;
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtext('admins_role_guard'));
+
+  UPDATE admins
+     SET role = COALESCE(new_role, role),
+         is_active = COALESCE(new_active, is_active)
+   WHERE id = target_id
+  RETURNING * INTO result;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'admin_not_found';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM admins WHERE role = 'superadmin' AND is_active = true
+  ) THEN
+    RAISE EXCEPTION 'last_active_superadmin';
+  END IF;
+
+  RETURN result;
+END;
+$$;
