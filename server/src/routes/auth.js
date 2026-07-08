@@ -41,7 +41,7 @@ authRouter.post('/login', async (req, res, next) => {
 
   const { data: admin, error } = await supabase
     .from('admins')
-    .select('id, email, password_hash')
+    .select('id, email, password_hash, role, is_active')
     .eq('email', email)
     .single()
 
@@ -51,11 +51,16 @@ authRouter.post('/login', async (req, res, next) => {
   // the email exists (timing side-channel / email enumeration).
   const passwordMatches = await bcrypt.compare(password, admin?.password_hash ?? DUMMY_HASH)
 
-  if (error || !admin || !passwordMatches) return next(httpError(401, 'Invalid email or password'))
+  // A deactivated admin is folded into the same generic 401 as a bad
+  // credential so the response never reveals that the account exists but is
+  // disabled.
+  if (error || !admin || !passwordMatches || !admin.is_active) {
+    return next(httpError(401, 'Invalid email or password'))
+  }
 
   const token = signToken({ sub: admin.id, email: admin.email })
 
-  res.json({ token, admin: { id: admin.id, email: admin.email } })
+  res.json({ token, admin: { id: admin.id, email: admin.email, role: admin.role } })
 })
 
 // POST /api/auth/register — bootstrap-first, NOT open.
