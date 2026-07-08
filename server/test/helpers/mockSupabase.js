@@ -12,6 +12,7 @@ import supabase from '../../src/lib/supabase.js'
 // documented assumption.
 
 const originalFrom = supabase.from.bind(supabase)
+const originalRpc = typeof supabase.rpc === 'function' ? supabase.rpc.bind(supabase) : undefined
 
 function makeQueryBuilder(result) {
   const resolved = Promise.resolve(result)
@@ -31,13 +32,14 @@ function makeQueryBuilder(result) {
 }
 
 /**
- * Queue an ordered sequence of { table, result } responses. Each call to
- * `supabase.from(table)` consumes the next queued entry IN ORDER and
- * asserts the table name matches what the code under test is expected
- * to query — this keeps the mock honest about call order instead of
- * silently returning wrong data.
+ * Queue an ordered sequence of responses. Each entry is either a
+ * `{ table, result }` (consumed by `supabase.from(table)`) or a
+ * `{ rpc, result }` (consumed by `supabase.rpc(name)`). Calls are matched
+ * against the queue head IN ORDER and the table/function name is asserted —
+ * this keeps the mock honest about call order instead of silently returning
+ * wrong data.
  *
- * @param {Array<{table: string, result: {data: any, error: any}}>} sequence
+ * @param {Array<{table?: string, rpc?: string, result: {data?: any, error?: any}}>} sequence
  * @returns {() => void} restore function — call in test teardown
  */
 export function mockSupabaseSequence(sequence) {
@@ -49,12 +51,26 @@ export function mockSupabaseSequence(sequence) {
       throw new Error(`mockSupabaseSequence: unexpected supabase.from("${table}") call — queue exhausted`)
     }
     if (next.table !== table) {
-      throw new Error(`mockSupabaseSequence: expected supabase.from("${next.table}") but got supabase.from("${table}")`)
+      const expected = next.rpc ? `rpc("${next.rpc}")` : `from("${next.table}")`
+      throw new Error(`mockSupabaseSequence: expected ${expected} but got from("${table}")`)
     }
     return makeQueryBuilder(next.result)
   }
 
+  supabase.rpc = (fn) => {
+    const next = queue.shift()
+    if (!next) {
+      throw new Error(`mockSupabaseSequence: unexpected supabase.rpc("${fn}") call — queue exhausted`)
+    }
+    if (next.rpc !== fn) {
+      const expected = next.table ? `from("${next.table}")` : `rpc("${next.rpc}")`
+      throw new Error(`mockSupabaseSequence: expected ${expected} but got rpc("${fn}")`)
+    }
+    return Promise.resolve(next.result)
+  }
+
   return function restoreSupabase() {
     supabase.from = originalFrom
+    if (originalRpc) supabase.rpc = originalRpc
   }
 }

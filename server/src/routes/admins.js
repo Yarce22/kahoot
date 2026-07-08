@@ -87,45 +87,33 @@ adminsRouter.patch('/:id', ...superadminOnly, async (req, res, next) => {
     return next(httpError(400, 'You cannot deactivate your own account'))
   }
 
-  const { data: target, error: targetErr } = await supabase
-    .from('admins')
-    .select('id, role, is_active')
-    .eq('id', id)
-    .single()
+  // The update + last-active-superadmin invariant runs inside a DB function
+  // serialized by an advisory lock (migration 005), so concurrent PATCHes
+  // can't race it into leaving zero active superadmins. It raises
+  // 'admin_not_found' / 'last_active_superadmin', mapped to 404 / 409 here.
+  const { data, error } = await supabase.rpc('update_admin_role_status', {
+    target_id: id,
+    new_role: role ?? null,
+    new_active: is_active ?? null
+  })
 
-  if (targetErr || !target) return next(httpError(404, 'Admin not found'))
-
-  // If this change would strip superadmin/active from a currently-active
-  // superadmin, make sure at least one active superadmin remains.
-  const removesSuperadminAccess =
-    target.role === 'superadmin' && target.is_active &&
-    (role === 'admin' || is_active === false)
-
-  if (removesSuperadminAccess) {
-    const { count } = await supabase
-      .from('admins')
-      .select('id', { count: 'exact', head: true })
-      .eq('role', 'superadmin')
-      .eq('is_active', true)
-
-    if ((count ?? 0) <= 1) {
+  if (error) {
+    // The raised message can surface in message/details/hint depending on the
+    // PostgREST version — check all three.
+    const text = `${error.message ?? ''} ${error.details ?? ''} ${error.hint ?? ''}`
+    if (text.includes('last_active_superadmin')) {
       return next(httpError(409, 'Cannot demote or deactivate the last active superadmin'))
     }
+    if (text.includes('admin_not_found')) {
+      return next(httpError(404, 'Admin not found'))
+    }
+    return next(error)
   }
 
-  const updates = {}
-  if (role !== undefined) updates.role = role
-  if (is_active !== undefined) updates.is_active = is_active
-
-  const { data: updated, error } = await supabase
-    .from('admins')
-    .update(updates)
-    .eq('id', id)
-    .select('id, email, role, is_active')
-    .single()
-
-  if (error || !updated) return next(httpError(404, 'Admin not found'))
-  res.json(updated)
+  // The function RETURNS the full admins row (incl. password_hash) — expose
+  // only the safe fields.
+  const updated = Array.isArray(data) ? data[0] : data
+  res.json({ id: updated.id, email: updated.email, role: updated.role, is_active: updated.is_active })
 })
 
 function isUniqueViolation(error) {
