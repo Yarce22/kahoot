@@ -4,7 +4,6 @@ import bcrypt from 'bcryptjs'
 import supabase from '../lib/supabase.js'
 import { signToken } from '../lib/jwt.js'
 import { httpError } from '../lib/httpError.js'
-import { requireAuth } from '../middleware/requireAuth.js'
 
 export const authRouter = Router()
 
@@ -41,7 +40,7 @@ authRouter.post('/login', async (req, res, next) => {
 
   const { data: admin, error } = await supabase
     .from('admins')
-    .select('id, email, password_hash')
+    .select('id, email, password_hash, role, is_active')
     .eq('email', email)
     .single()
 
@@ -51,31 +50,27 @@ authRouter.post('/login', async (req, res, next) => {
   // the email exists (timing side-channel / email enumeration).
   const passwordMatches = await bcrypt.compare(password, admin?.password_hash ?? DUMMY_HASH)
 
-  if (error || !admin || !passwordMatches) return next(httpError(401, 'Invalid email or password'))
+  // A deactivated admin is folded into the same generic 401 as a bad
+  // credential so the response never reveals that the account exists but is
+  // disabled.
+  if (error || !admin || !passwordMatches || !admin.is_active) {
+    return next(httpError(401, 'Invalid email or password'))
+  }
 
   const token = signToken({ sub: admin.id, email: admin.email })
 
-  res.json({ token, admin: { id: admin.id, email: admin.email } })
+  res.json({ token, admin: { id: admin.id, email: admin.email, role: admin.role } })
 })
 
-// POST /api/auth/register — bootstrap-first, NOT open.
-// Allowed via either:
-//   - an already-authenticated admin (valid jwt bearer token) — always
-//     allowed, independent of AUTH_LEGACY_TOKEN_ENABLED, since disabling
-//     that flag is meant to retire the legacy break-glass token, not lock
-//     out admin creation entirely for admins who already have accounts.
-//   - a valid legacy ADMIN_TOKEN header — only when AUTH_LEGACY_TOKEN_ENABLED
-//     is truthy (the break-glass path for bootstrapping the very first admin).
+// POST /api/auth/register — legacy break-glass ONLY, for bootstrapping the
+// very first admin. Requires a valid legacy ADMIN_TOKEN header and is active
+// only when AUTH_LEGACY_TOKEN_ENABLED is truthy.
+//
+// Admin-to-admin creation under RBAC goes through the superadmin-only
+// POST /api/admins route — a JWT-authenticated (non-break-glass) path here
+// would bypass that gate, letting a plain admin provision accounts, so it is
+// intentionally NOT offered.
 authRouter.post('/register', async (req, res, next) => {
-  const authHeader = req.headers['authorization']
-
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    return requireAuth(req, res, (err) => {
-      if (err) return next(err)
-      createAdmin(req, res, next)
-    })
-  }
-
   if (!process.env.AUTH_LEGACY_TOKEN_ENABLED || !legacyAdminTokenMatches(req)) {
     return next(httpError(403, 'Registration is disabled'))
   }

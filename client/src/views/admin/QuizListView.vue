@@ -2,7 +2,10 @@
   <div class="quiz-list-view view-transition-enter">
     <!-- Header -->
     <div class="quiz-list-header">
-      <h1 class="quiz-list-title nunito">Mis Cuestionarios</h1>
+      <h1 class="quiz-list-title nunito">{{ auth.isSuperadmin ? 'Todos los Cuestionarios' : 'Mis Cuestionarios' }}</h1>
+      <router-link v-if="auth.isSuperadmin" to="/admin/admins" class="btn btn-primary" style="font-size: 14px; padding: 8px 16px;">
+        👥 Administradores
+      </router-link>
     </div>
 
     <!-- Loading -->
@@ -33,6 +36,7 @@
         <h2 class="quiz-card-title">{{ quiz.title }}</h2>
         <p class="quiz-card-meta">
           {{ quiz.questionCount ?? 0 }} pregunta(s)
+          <span v-if="auth.isSuperadmin && quiz.owner"> · {{ quiz.owner.email }}</span>
         </p>
 
         <!-- Actions -->
@@ -75,9 +79,11 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQuizStore } from '../../stores/quiz.js'
+import { useAuthStore } from '../../stores/auth.js'
 
 const router = useRouter()
 const store = useQuizStore()
+const auth = useAuthStore()
 
 const startingId = ref(null)
 const startError = ref('')

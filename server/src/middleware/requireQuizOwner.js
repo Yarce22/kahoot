@@ -34,7 +34,12 @@ export function requireQuizOwner(options = {}) {
       .single()
 
     if (error || !quiz) return next(httpError(404, 'Quiz not found'))
-    if (quiz.owner_id !== req.admin.id) return next(httpError(403, 'Not the quiz owner'))
+
+    // Superadmins bypass ownership entirely — they can view and manage every
+    // admin's content. A plain admin must own the quiz.
+    if (req.admin.role !== 'superadmin' && quiz.owner_id !== req.admin.id) {
+      return next(httpError(403, 'Not the quiz owner'))
+    }
 
     next()
   }
