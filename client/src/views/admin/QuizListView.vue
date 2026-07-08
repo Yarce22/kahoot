@@ -43,6 +43,9 @@
           <button class="btn-icon btn-edit" @click="router.push(`/admin/quizzes/${quiz.id}`)">
             ✏ Editar
           </button>
+          <button class="btn-icon btn-history" @click="router.push(`/admin/quizzes/${quiz.id}/sessions`)">
+            📊 Historial
+          </button>
           <button class="btn-icon btn-delete" @click="remove(quiz.id)">
             🗑 Eliminar
           </button>
@@ -206,6 +209,7 @@ function thumbEmoji(idx)    { return EMOJIS[idx % EMOJIS.length] }
 
 .btn-host   { background: rgba(155, 114, 245, 0.2); color: var(--accent-purple); border: 1px solid rgba(155, 114, 245, 0.3); }
 .btn-edit   { background: rgba(61, 207, 207, 0.15);  color: var(--accent-cyan);   border: 1px solid rgba(61, 207, 207, 0.25); }
+.btn-history{ background: rgba(245, 200, 66, 0.15);  color: var(--accent-yellow); border: 1px solid rgba(245, 200, 66, 0.25); }
 .btn-delete { background: rgba(244, 99, 74, 0.15);   color: var(--accent-coral);  border: 1px solid rgba(244, 99, 74, 0.25); }
 
 /* Floating Action Button */

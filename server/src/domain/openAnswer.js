@@ -14,17 +14,20 @@ function normalize(str) {
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
-    .trim()
+    // Trim surrounding whitespace AND punctuation so a stray "stracciatella."
+    // (trailing period) still matches "stracciatella" in the answer.
+    .replace(/^[\s\p{P}]+|[\s\p{P}]+$/gu, '')
 }
 
 // parseKeywords — split the stored answer into normalized, non-empty
-// keywords. Commas AND whitespace are both treated as separators, so the
-// answer works whether keywords are entered "500, lechuga, tomate" or
-// "500 lechuga tomate" — otherwise a space-separated entry collapses into a
-// single keyword that only matches that exact phrase in that exact order.
+// keywords on COMMAS only. Each keyword may be multiple words (a phrase like
+// "tomate cherry") that must appear contiguously in the answer. Keywords are
+// matched independently of each other, so their order in the answer doesn't
+// matter — but a multi-word keyword must appear as-is.
 export function parseKeywords(csv) {
-  return normalize(csv)
-    .split(/[\s,]+/)
+  return (csv ?? '')
+    .split(',')
+    .map(normalize)
     .filter(Boolean)
 }
 
