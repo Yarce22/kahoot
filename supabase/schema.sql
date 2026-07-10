@@ -33,7 +33,7 @@ CREATE TABLE questions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   quiz_id UUID NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
   text TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('open', 'closed', 'true_false')),
+  type TEXT NOT NULL CHECK (type IN ('open', 'closed', 'true_false', 'multiple')),
   time_limit_seconds INT NOT NULL DEFAULT 30 CHECK (time_limit_seconds BETWEEN 5 AND 120),
   order_index INT NOT NULL DEFAULT 0
 );
