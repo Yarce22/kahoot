@@ -5,3 +5,5 @@ server/node_modules/
 client/node_modules/
 .atl/
 .codegraph/
+.vercel
+.env*

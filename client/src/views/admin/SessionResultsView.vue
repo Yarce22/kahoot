@@ -32,8 +32,8 @@
             :class="['leaderboard-item', rankClass(i)]"
           >
             <div class="rank-badge">{{ rankLabel(i) }}</div>
-            <span class="player-name">{{ entry.nickname }}</span>
-            <span class="player-score">{{ entry.score }} pts</span>
+            <span class="player-name">{{ entry.nickname }}:</span>
+            <span class="player-score"> {{ entry.score }} pts</span>
           </div>
         </div>
       </div>
