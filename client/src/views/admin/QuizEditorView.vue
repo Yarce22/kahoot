@@ -62,8 +62,8 @@
                 <span class="badge badge-orange">{{ q.time_limit_seconds }}s</span>
               </div>
 
-              <!-- Options for closed questions -->
-              <ul v-if="q.type === 'closed'" class="options-list">
+              <!-- Options for closed / multiple questions -->
+              <ul v-if="q.type === 'closed' || q.type === 'multiple'" class="options-list">
                 <li v-for="opt in (q.options || [])" :key="opt.id" class="option-row">
                   <input
                     type="checkbox"
@@ -108,6 +108,7 @@
                   <label class="field-label-sm">Tipo</label>
                   <select v-model="editQuestionForm.type" class="input-sm">
                     <option value="closed">Opción múltiple</option>
+                    <option value="multiple">Varias correctas</option>
                     <option value="true_false">Verdadero / Falso</option>
                     <option value="open">Respuesta abierta</option>
                   </select>
@@ -161,6 +162,11 @@
           >Opción múltiple</button>
           <button
             type="button"
+            :class="['type-btn', newQuestion.type === 'multiple' ? 'active-purple' : '']"
+            @click="newQuestion.type = 'multiple'"
+          >Varias correctas</button>
+          <button
+            type="button"
             :class="['type-btn', newQuestion.type === 'true_false' ? 'active-green' : '']"
             @click="newQuestion.type = 'true_false'"
           >Verdadero / Falso</button>
@@ -207,6 +213,32 @@
             </div>
           </template>
 
+          <!-- Multiple: draft options with several correct -->
+          <template v-else-if="newQuestion.type === 'multiple'">
+            <div style="margin-bottom: 12px;">
+              <label class="field-label-sm" style="margin-bottom: 8px; display: block;">Opciones (marcá todas las correctas)</label>
+              <div v-for="(opt, idx) in newOptions" :key="idx" class="option-row" style="margin-bottom: 6px;">
+                <input
+                  type="checkbox"
+                  :checked="opt.is_correct"
+                  @change="toggleNewOptionCorrect(idx)"
+                />
+                <span :style="opt.is_correct ? 'color: var(--accent-green); font-weight: 700;' : 'color: var(--text-primary);'">{{ opt.text }}</span>
+                <button type="button" class="btn-icon btn-delete" style="padding: 4px 8px; font-size: 12px;" @click="removeNewOption(idx)">✕</button>
+              </div>
+              <div style="display: flex; gap: 8px; margin-top: 8px;">
+                <input v-model="newOptionInput" class="input-sm" style="flex: 1;" placeholder="Texto de la opción" @keydown.enter.prevent="addNewOption" />
+                <button type="button" class="btn-icon btn-edit" @click="addNewOption">+ Agregar opción</button>
+              </div>
+              <p v-if="newOptions.length < 2" style="color: var(--text-muted); font-size: 12px; margin-top: 6px; font-family: 'Nunito', sans-serif;">
+                Agregá al menos 2 opciones
+              </p>
+              <p v-else-if="!newOptions.some(o => o.is_correct)" style="color: var(--text-muted); font-size: 12px; margin-top: 6px; font-family: 'Nunito', sans-serif;">
+                Marcá al menos una opción correcta
+              </p>
+            </div>
+          </template>
+
           <!-- True/False: correct answer -->
           <template v-else-if="newQuestion.type === 'true_false'">
             <div style="margin-bottom: 12px;">
@@ -242,7 +274,10 @@
           <button
             type="submit"
             class="btn btn-primary btn-sm"
-            :disabled="newQuestion.type === 'closed' && newOptions.length < 2"
+            :disabled="
+              (newQuestion.type === 'closed' && newOptions.length < 2) ||
+              (newQuestion.type === 'multiple' && (newOptions.length < 2 || !newOptions.some(o => o.is_correct)))
+            "
           >
             Agregar pregunta
           </button>
@@ -357,9 +392,15 @@ function setCorrectOption(idx) {
   newOptions.value.forEach((o, i) => { o.is_correct = i === idx })
 }
 
+// 'multiple' allows several correct options, so each checkbox toggles
+// independently instead of moving a single radio selection.
+function toggleNewOptionCorrect(idx) {
+  newOptions.value[idx].is_correct = !newOptions.value[idx].is_correct
+}
+
 async function addQuestion() {
   const payload = { ...newQuestion.value }
-  if (payload.type === 'closed') {
+  if (payload.type === 'closed' || payload.type === 'multiple') {
     payload.options = newOptions.value.map(o => ({ text: o.text, is_correct: o.is_correct }))
   } else if (payload.type === 'true_false') {
     payload.correct_answer = newTfCorrect.value
@@ -433,11 +474,17 @@ async function createSession() {
 }
 
 function typeLabel(type) {
-  return type === 'closed' ? 'Múltiple' : type === 'true_false' ? 'V/F' : 'Abierta'
+  if (type === 'closed') return 'Múltiple'
+  if (type === 'multiple') return 'Varias correctas'
+  if (type === 'true_false') return 'V/F'
+  return 'Abierta'
 }
 
 function typeBadgeClass(type) {
-  return type === 'closed' ? 'badge-blue' : type === 'true_false' ? 'badge-green' : 'badge-orange'
+  if (type === 'closed') return 'badge-blue'
+  if (type === 'multiple') return 'badge-purple'
+  if (type === 'true_false') return 'badge-green'
+  return 'badge-orange'
 }
 </script>
 
@@ -597,6 +644,7 @@ function typeBadgeClass(type) {
 .type-btn.active-blue   { border-color: var(--accent-cyan);   color: var(--accent-cyan);   background: rgba(61, 207, 207, 0.1); }
 .type-btn.active-green  { border-color: var(--accent-green);  color: var(--accent-green);  background: rgba(70, 217, 138, 0.1); }
 .type-btn.active-orange { border-color: var(--accent-yellow); color: var(--accent-yellow); background: rgba(245, 200, 66, 0.1); }
+.type-btn.active-purple { border-color: var(--accent-purple); color: var(--accent-purple); background: rgba(155, 114, 245, 0.1); }
 
 /* Action icon buttons */
 .btn-icon {

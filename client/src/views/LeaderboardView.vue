@@ -8,7 +8,11 @@
       role="status"
       aria-live="polite"
     >
-      <template v-if="store.lastReveal.correctOptionId">
+      <template v-if="store.lastReveal.correctOptionIds?.length">
+        <p class="correct-answer-label">Respuestas correctas</p>
+        <p class="correct-answer-text">{{ correctOptionTexts }}</p>
+      </template>
+      <template v-else-if="store.lastReveal.correctOptionId">
         <p class="correct-answer-label">Respuesta correcta</p>
         <p class="correct-answer-text">{{ correctOptionText }}</p>
       </template>
@@ -62,6 +66,15 @@ const correctOptionText = computed(() => {
   const id = store.lastReveal?.correctOptionId
   if (!id || !store.currentQuestion?.options) return ''
   return store.currentQuestion.options.find(o => o.id === id)?.text || ''
+})
+
+const correctOptionTexts = computed(() => {
+  const ids = store.lastReveal?.correctOptionIds
+  if (!ids?.length || !store.currentQuestion?.options) return ''
+  return store.currentQuestion.options
+    .filter(o => ids.includes(o.id))
+    .map(o => o.text)
+    .join(', ')
 })
 
 function rankClass(i) {

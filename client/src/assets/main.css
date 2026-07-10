@@ -230,6 +230,7 @@ html, body, #app {
 .badge-blue   { background: rgba(61,207,255,0.18);  color: var(--accent-cyan);   border: 1px solid rgba(61,207,255,0.25); }
 .badge-green  { background: rgba(70,217,138,0.18);  color: var(--accent-green);  border: 1px solid rgba(70,217,138,0.25); }
 .badge-orange { background: rgba(245,180,66,0.18);  color: var(--accent-yellow); border: 1px solid rgba(245,180,66,0.25); }
+.badge-purple { background: rgba(155,114,245,0.18); color: var(--accent-purple); border: 1px solid rgba(155,114,245,0.25); }
 
 /* ── Shared: Input ─────────────────────────────────────────── */
 .input-field {

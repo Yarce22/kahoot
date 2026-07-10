@@ -4,6 +4,7 @@ import { getIO } from '../lib/io.js'
 import { activeGames } from '../runtime/activeGames.js'
 import { startQuestion, endQuestion, endGame } from '../domain/gameEngine.js'
 import { matchOpenAnswer } from '../domain/openAnswer.js'
+import { evaluateMultipleAnswer } from '../domain/multipleChoice.js'
 import { hostAuthMiddleware, jwtHostAuthMiddleware } from './hostAuth.js'
 
 export function registerSocketHandlers(io) {
@@ -101,7 +102,7 @@ async function handleJoinGame(socket, io, data, ack) {
 // ─── PLAYER: submit-answer ────────────────────────────────────────────────────
 
 async function handleSubmitAnswer(socket, data, ack) {
-  const { questionIndex, selectedOptionId: answerId, answerText } = data ?? {}
+  const { questionIndex, selectedOptionId: answerId, selectedOptionIds, answerText } = data ?? {}
   const pin = socket.gamePin
   if (!pin) return ack?.({ error: 'SESSION_NOT_FOUND' })
 
@@ -128,10 +129,29 @@ async function handleSubmitAnswer(socket, data, ack) {
   // Determine correctness
   let isCorrect = null
   let selectedOptionId = null
+  // For 'multiple', the FK selected_option_id can't hold several ids, so the
+  // player's picks are stored as comma-joined option texts in answer_text.
+  let recordedAnswerText = answerText ?? null
+  // Track the option ids to tally into answerStats (one id for single-choice,
+  // the whole set for 'multiple').
+  let countedOptionIds = answerId ? [answerId] : []
+
   if ((question.type === 'closed' || question.type === 'true_false') && answerId) {
     const option = question.options.find(o => o.id === answerId)
     isCorrect = option?.is_correct ?? false
     selectedOptionId = answerId
+  } else if (question.type === 'multiple') {
+    // All-or-nothing: the set of picked options must match the correct set
+    // exactly — no missing correct, no extra incorrect.
+    const { picked, isCorrect: multiCorrect } = evaluateMultipleAnswer(
+      question.options,
+      selectedOptionIds ?? []
+    )
+    isCorrect = multiCorrect
+    countedOptionIds = picked
+    recordedAnswerText = picked.length
+      ? question.options.filter(o => picked.includes(o.id)).map(o => o.text).join(', ')
+      : null
   } else if (question.type === 'open' && answerText) {
     // The correct option's text holds the comma-separated required keywords.
     const correctOption = question.options?.find(o => o.is_correct)
@@ -140,9 +160,13 @@ async function handleSubmitAnswer(socket, data, ack) {
     }
   }
 
+  // Accumulate answer time on EVERY submission, not only correct ones: the
+  // leaderboard tie-break is cumulative answer time (faster wins), so it must
+  // reflect how long the player took overall, regardless of correctness.
+  player.totalTimeMs += timeTakenMs
+
   if (isCorrect) {
     player.score += 1
-    player.totalTimeMs += timeTakenMs
     if (!game.firstCorrectAnswered) {
       game.firstCorrectAnswered = true
       player.score += 1
@@ -153,7 +177,7 @@ async function handleSubmitAnswer(socket, data, ack) {
   const { error } = await supabase.from('player_answers').insert({
     player_id: player.playerId,
     question_id: question.id,
-    answer_text: answerText ?? null,
+    answer_text: recordedAnswerText,
     selected_option_id: selectedOptionId,
     answered_at: new Date().toISOString(),
     time_taken_ms: timeTakenMs,
@@ -161,8 +185,20 @@ async function handleSubmitAnswer(socket, data, ack) {
   })
   if (error) return ack?.({ error: 'SERVER_ERROR' })
 
-  if (answerId) {
-    game.answerCounts.set(answerId, (game.answerCounts.get(answerId) ?? 0) + 1)
+  // Persist the running score/time immediately, not only at endGame. Scores
+  // live in the volatile in-memory game.players map; if a player disconnects
+  // before the host ends the game (common: players close their tab after the
+  // last question), endGame would flush nothing and their score would read 0.
+  // Writing incrementally makes the players table the source of truth,
+  // independent of socket lifecycle. endGame's bulk update stays as a
+  // redundant safety net.
+  await supabase
+    .from('players')
+    .update({ score: player.score, total_time_ms: player.totalTimeMs })
+    .eq('id', player.playerId)
+
+  for (const id of countedOptionIds) {
+    game.answerCounts.set(id, (game.answerCounts.get(id) ?? 0) + 1)
   }
   game.answersReceived.add(player.playerId)
 

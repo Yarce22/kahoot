@@ -25,7 +25,7 @@ export function startQuestion(pin) {
     text: question.text,
     type: question.type,
     timeLimitSeconds: question.time_limit_seconds,
-    ...((question.type === 'closed' || question.type === 'true_false') && {
+    ...((question.type === 'closed' || question.type === 'true_false' || question.type === 'multiple') && {
       options: question.options.map(o => ({ id: o.id, text: o.text }))
     })
   }
@@ -57,9 +57,16 @@ export async function endQuestion(pin) {
   const question = game.questions[game.currentQuestionIndex]
 
   // Build answer stats
-  const isChoiceType = question.type === 'closed' || question.type === 'true_false'
-  const correctOptionId = isChoiceType
+  const isSingleChoice = question.type === 'closed' || question.type === 'true_false'
+  const isChoiceType = isSingleChoice || question.type === 'multiple'
+
+  // Single-choice reveals one correct option id; 'multiple' reveals the full
+  // set of correct option ids so the client can highlight every right answer.
+  const correctOptionId = isSingleChoice
     ? question.options.find(o => o.is_correct)?.id ?? null
+    : null
+  const correctOptionIds = question.type === 'multiple'
+    ? question.options.filter(o => o.is_correct).map(o => o.id)
     : null
 
   const totalPlayers = game.players.size
@@ -76,7 +83,7 @@ export async function endQuestion(pin) {
     ? question.options?.find(o => o.is_correct)?.text ?? null
     : null
 
-  io.to(`session:${pin}`).emit('question-end', { correctOptionId, correctAnswerText, answerStats })
+  io.to(`session:${pin}`).emit('question-end', { correctOptionId, correctOptionIds, correctAnswerText, answerStats })
 
   // Emit interim leaderboard
   const leaderboard = buildLeaderboard(game)

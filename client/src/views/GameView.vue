@@ -61,6 +61,46 @@
         </button>
       </div>
 
+      <!-- Multiple (several correct answers) -->
+      <div
+        v-else-if="store.currentQuestion.type === 'multiple'"
+        class="multi-area"
+      >
+        <p class="multi-hint" role="note">Elegí todas las que creas correctas</p>
+        <div
+          class="answer-grid"
+          role="group"
+          :aria-label="`Opciones de respuesta para: ${store.currentQuestion.text}`"
+        >
+          <button
+            v-for="(opt, i) in store.currentQuestion.options"
+            :key="opt.id"
+            type="button"
+            :class="[
+              'answer-btn',
+              `answer-btn-${i % 4}`,
+              { 'selected': selectedIds.includes(opt.id), 'dimmed': store.myAnswer && !selectedIds.includes(opt.id) }
+            ]"
+            :disabled="!!store.myAnswer"
+            :aria-pressed="selectedIds.includes(opt.id)"
+            @click="toggleMulti(opt.id)"
+          >
+            <span class="answer-icon" aria-hidden="true">{{ selectedIds.includes(opt.id) ? '☑' : '☐' }}</span>
+            {{ opt.text }}
+          </button>
+        </div>
+        <button
+          v-if="!store.myAnswer"
+          type="button"
+          class="btn btn-primary"
+          style="width: 100%; margin-top: 12px;"
+          :disabled="selectedIds.length === 0"
+          @click="answerMulti"
+        >
+          Enviar respuesta
+        </button>
+      </div>
+
       <!-- True / False -->
       <div
         v-else-if="store.currentQuestion.type === 'true_false'"
@@ -134,9 +174,13 @@ const pin = route.params.pin
 const store = useGameStore()
 const { submitAnswer } = useGame(pin)
 const openText = ref('')
+const selectedIds = ref([])
 
 // Clear the draft when a new question starts.
-watch(() => store.currentQuestion?.index, () => { openText.value = '' })
+watch(() => store.currentQuestion?.index, () => {
+  openText.value = ''
+  selectedIds.value = []
+})
 
 // Auto-submit open answers when time is almost up. Fires at <= 1s left (the
 // server closes the question at 0s and immediately moves on, so submitting on
@@ -169,6 +213,21 @@ function answerClosed(optionId) {
   submitAnswer({ questionIndex: store.currentQuestion.index, selectedOptionId: optionId })
 }
 
+function toggleMulti(optionId) {
+  if (store.myAnswer) return
+  const i = selectedIds.value.indexOf(optionId)
+  if (i === -1) selectedIds.value.push(optionId)
+  else selectedIds.value.splice(i, 1)
+}
+
+function answerMulti() {
+  if (store.myAnswer || selectedIds.value.length === 0) return
+  // Truthy marker to lock the UI into the "sent" state; the real payload is
+  // the set of selected option ids.
+  store.myAnswer = true
+  submitAnswer({ questionIndex: store.currentQuestion.index, selectedOptionIds: [...selectedIds.value] })
+}
+
 function answerOpen() {
   const text = openText.value.trim()
   if (!text) return
@@ -194,6 +253,19 @@ function autoSubmitOpen() {
   flex-direction: column;
   position: relative;
   z-index: 1;
+}
+
+.multi-area {
+  padding: 0 12px 12px;
+}
+
+.multi-hint {
+  text-align: center;
+  color: var(--text-secondary);
+  font-family: 'Nunito', sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 10px;
 }
 
 .timer-bar-container {

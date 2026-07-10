@@ -6,11 +6,12 @@ import { httpError } from '../lib/httpError.js'
 
 export const questionsRouter = Router()
 
-const VALID_TYPES = ['open', 'closed', 'true_false']
+const VALID_TYPES = ['open', 'closed', 'true_false', 'multiple']
+const TYPE_ERROR = "type must be 'open', 'closed', 'true_false', or 'multiple'"
 
 function validateQuestionBody({ text, type, time_limit_seconds }) {
   if (!text) return 'text is required'
-  if (!VALID_TYPES.includes(type)) return "type must be 'open', 'closed', or 'true_false'"
+  if (!VALID_TYPES.includes(type)) return TYPE_ERROR
   if (
     time_limit_seconds === undefined ||
     time_limit_seconds < 5 ||
@@ -25,6 +26,18 @@ function validateOptions(options) {
   }
   const correctCount = options.filter(o => o.is_correct).length
   if (correctCount !== 1) return 'closed questions must have exactly one correct option'
+  return null
+}
+
+// validateMultipleOptions — 'multiple' allows several correct options (scored
+// all-or-nothing), so it only requires at least 2 options and at least one
+// correct. Zero correct would make the question unwinnable.
+function validateMultipleOptions(options) {
+  if (!Array.isArray(options) || options.length < 2) {
+    return 'multiple questions require at least 2 options'
+  }
+  const correctCount = options.filter(o => o.is_correct).length
+  if (correctCount < 1) return 'multiple questions must have at least one correct option'
   return null
 }
 
@@ -62,6 +75,11 @@ questionsRouter.post('/quizzes/:id/questions', requireAdmin, authGate, ownerGate
     if (optionsError) return next(httpError(422, optionsError))
   }
 
+  if (type === 'multiple') {
+    const optionsError = validateMultipleOptions(options)
+    if (optionsError) return next(httpError(422, optionsError))
+  }
+
   if (type === 'true_false' && !['true', 'false'].includes(correct_answer)) {
     return next(httpError(422, "true_false questions require correct_answer: 'true' or 'false'"))
   }
@@ -91,7 +109,7 @@ questionsRouter.post('/quizzes/:id/questions', requireAdmin, authGate, ownerGate
 
   let optionRows = null
 
-  if (type === 'closed') {
+  if (type === 'closed' || type === 'multiple') {
     optionRows = options.map(o => ({ question_id: question.id, text: o.text, is_correct: o.is_correct }))
   } else if (type === 'true_false') {
     optionRows = [
@@ -118,7 +136,7 @@ questionsRouter.put('/questions/:id', requireAdmin, authGate, ownerGate({ resour
   const updates = {}
   if (text !== undefined) updates.text = text
   if (type !== undefined) {
-    if (!VALID_TYPES.includes(type)) return next(httpError(400, "type must be 'open', 'closed', or 'true_false'"))
+    if (!VALID_TYPES.includes(type)) return next(httpError(400, TYPE_ERROR))
     updates.type = type
   }
   if (time_limit_seconds !== undefined) {
@@ -140,8 +158,10 @@ questionsRouter.put('/questions/:id', requireAdmin, authGate, ownerGate({ resour
 
   const effectiveType = updates.type ?? question.type
 
-  if (effectiveType === 'closed' && options !== undefined) {
-    const optionsError = validateOptions(options)
+  if ((effectiveType === 'closed' || effectiveType === 'multiple') && options !== undefined) {
+    const optionsError = effectiveType === 'multiple'
+      ? validateMultipleOptions(options)
+      : validateOptions(options)
     if (optionsError) return next(httpError(422, optionsError))
 
     const { error: deleteError } = await supabase
