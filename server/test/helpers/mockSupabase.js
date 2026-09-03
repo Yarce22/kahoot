@@ -27,7 +27,7 @@ function makeQueryBuilder(result, calls = [], table) {
   const builder = {
     select: () => builder,
     eq: record('eq'),
-    in: () => builder,
+    in: record('in'),
     is: () => builder,
     or: () => builder,
     order: () => builder,
@@ -50,11 +50,12 @@ function makeQueryBuilder(result, calls = [], table) {
  * wrong data.
  *
  * The returned restore function additionally carries a `.calls` array
- * recording every `insert`/`update`/`eq` made across the whole sequence as
- * `{ table, method, args }` — so a test can assert the payload that was
+ * recording every `insert`/`update`/`eq`/`in` made across the whole sequence
+ * as `{ table, method, args }` — so a test can assert the payload that was
  * actually sent (e.g. that a password was stored as a bcrypt hash, not
- * plaintext), not merely that some write happened. Purely additive: callers
- * that only need `restore()` can keep ignoring it.
+ * plaintext) and the filter it was scoped by, not merely that some write
+ * happened. Purely additive: callers that only need `restore()` can keep
+ * ignoring it.
  *
  * @param {Array<{table?: string, rpc?: string, result: {data?: any, error?: any}}>} sequence
  * @returns {(() => void) & { calls: Array<{table: string, method: string, args: any[]}> }} restore function — call in test teardown

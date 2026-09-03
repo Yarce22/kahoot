@@ -97,6 +97,12 @@ export async function endGame(pin) {
 
   clearInterval(game.tickHandle)
   clearTimeout(game.timeoutHandle)
+  // A manual/host-initiated end (or the last-question auto-end) makes any
+  // pending host-abandonment timer moot — clear it so it doesn't dangle and
+  // pointlessly re-fire endGame later. That later call would already be a
+  // safe no-op (see the `if (!game) return` guard above), but leaving the
+  // timer around is needless.
+  clearTimeout(game.hostDisconnectTimer)
 
   // Persist each player's final score + total time before the in-memory game
   // is discarded — otherwise the leaderboard can't be reconstructed later.

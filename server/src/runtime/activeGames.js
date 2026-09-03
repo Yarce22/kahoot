@@ -11,6 +11,8 @@
  * @property {number|null} questionStartedAt  - Date.now() when current question started
  * @property {Map<string, {playerId: string, nickname: string, score: number, totalTimeMs: number}>} players - keyed by socketId
  * @property {Set<string>} answersReceived     - set of playerIds who answered current question
+ * @property {Set<string>} hostSocketIds       - socket ids of every currently-connected host socket for this session (can be >1: co-hosting superadmin, same admin in two tabs)
+ * @property {NodeJS.Timeout|null} hostDisconnectTimer - pending host-abandonment auto-end timer, if any
  */
 
 /** @type {Map<string, GameState>} */

@@ -60,7 +60,9 @@ sessionsRouter.post('/', requireAdmin, authGate, ownerGate({ resolve: resolveQui
     players: new Map(),
     answersReceived: new Set(),
     answerCounts: new Map(),
-    firstCorrectAnswered: false
+    firstCorrectAnswered: false,
+    hostSocketIds: new Set(),
+    hostDisconnectTimer: null
   })
 
   res.status(201).json({ pin, sessionId })

@@ -34,7 +34,9 @@ function makeGame(quizId) {
     players: new Map(),
     answersReceived: new Set(),
     answerCounts: new Map(),
-    firstCorrectAnswered: false
+    firstCorrectAnswered: false,
+    hostSocketIds: new Set(),
+    hostDisconnectTimer: null
   }
 }
 

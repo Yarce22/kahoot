@@ -15,6 +15,7 @@ import { adminsRouter } from './routes/admins.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import { resolveBootstrapAdminOwnerId } from './lib/bootstrapAdmin.js'
 import { getClientOrigin } from './lib/clientOrigin.js'
+import supabase from './lib/supabase.js'
 
 export const app = express()
 const httpServer = createServer(app)
@@ -62,6 +63,38 @@ async function validateLegacyBootstrapAdmin() {
   }
 }
 
+// closeOrphanedSessions — activeGames is a fresh, empty Map on every process
+// boot (module-level `new Map()`, never persisted), so at the instant the
+// server starts, ANY game_sessions row still 'lobby'/'active' is by
+// definition orphaned: there is no in-memory game backing it, full stop, no
+// need to cross-reference activeGames. This is what reconciles hosts whose
+// tab/socket died while the server itself was ALSO down — the complementary
+// case (server stays up, only the host disconnects) is instead handled live
+// by the hostDisconnectTimer grace period in sockets/index.js.
+// Exported (and structured as an independently-callable function rather
+// than inline top-level code) so tests can exercise it directly without
+// booting the whole HTTP server. Must never block startup: same log-and
+// continue spirit as routes/auth.js's forgot-password handler — errors are
+// logged, not thrown.
+export async function closeOrphanedSessions() {
+  try {
+    const { data, error } = await supabase
+      .from('game_sessions')
+      .update({ status: 'finished', ended_at: new Date().toISOString() })
+      .in('status', ['lobby', 'active'])
+      .select('id')
+
+    if (error) {
+      console.error('[startup] failed to close orphaned sessions', { error })
+      return
+    }
+
+    console.log(`[startup] closed ${data?.length ?? 0} orphaned session(s)`)
+  } catch (err) {
+    console.error('[startup] failed to close orphaned sessions', { error: err })
+  }
+}
+
 // warnMissingClientOrigin — a warning, not a hard failure: local dev
 // legitimately runs on the localhost fallback. In production, though, the
 // fallback silently poisons anything built from the origin — most visibly
@@ -84,11 +117,13 @@ const isMainModule = process.argv[1] && import.meta.url === pathToFileURL(proces
 if (isMainModule) {
   const PORT = process.env.PORT || 3000
   warnMissingClientOrigin()
-  validateLegacyBootstrapAdmin().then(() => {
-    httpServer.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`)
+  validateLegacyBootstrapAdmin()
+    .then(() => closeOrphanedSessions())
+    .then(() => {
+      httpServer.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`)
+      })
     })
-  })
 }
 
 export { httpServer }

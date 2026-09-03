@@ -7,6 +7,14 @@ import { matchOpenAnswer } from '../domain/openAnswer.js'
 import { evaluateMultipleAnswer } from '../domain/multipleChoice.js'
 import { hostAuthMiddleware, jwtHostAuthMiddleware } from './hostAuth.js'
 
+// HOST_DISCONNECT_GRACE_MS — how long a session waits, after its last host
+// socket disconnects, before auto-ending via endGame(pin). Overridable via
+// env var (same `env-var || default` shape as PORT in src/index.js) so
+// tests can shrink it instead of waiting 5 real minutes; read once at
+// module load, so tests must set the env var BEFORE importing this module
+// (transitively, via ../src/index.js) — see socket.hostDisconnect.test.js.
+const HOST_DISCONNECT_GRACE_MS = Number(process.env.HOST_DISCONNECT_GRACE_MS) || 5 * 60 * 1000
+
 export function registerSocketHandlers(io) {
   // Apply host auth check lazily — only sockets that provide a token
   // (jwt `auth.token` or legacy `auth.adminToken`) get isHost=true.
@@ -256,6 +264,29 @@ async function handleHostJoinSession(socket, data, ack) {
   // session identity and ownership on every action.
   socket.authorizedSessionId = game.sessionId
 
+  // If this same socket was already hosting a DIFFERENT session, drop it
+  // from that OLD game's hostSocketIds — keeps host-abandonment tracking
+  // correct even when a host's socket hops sessions without a real
+  // 'disconnect' event. If that empties the old game and it has no pending
+  // grace timer yet, start one for the OLD pin too.
+  if (socket.gamePin && socket.gamePin !== pin) {
+    const oldGame = activeGames.get(socket.gamePin)
+    if (oldGame) {
+      oldGame.hostSocketIds.delete(socket.id)
+      if (oldGame.hostSocketIds.size === 0 && !oldGame.hostDisconnectTimer) {
+        const oldPin = socket.gamePin
+        oldGame.hostDisconnectTimer = setTimeout(() => endGame(oldPin), HOST_DISCONNECT_GRACE_MS)
+      }
+    }
+  }
+
+  // A host (re)joining within the grace window cancels the pending auto-end.
+  if (game.hostDisconnectTimer) {
+    clearTimeout(game.hostDisconnectTimer)
+    game.hostDisconnectTimer = null
+  }
+  game.hostSocketIds.add(socket.id)
+
   // Leave previous session room if switching sessions
   if (socket.gamePin && socket.gamePin !== pin) {
     socket.leave(`session:${socket.gamePin}`)
@@ -327,15 +358,24 @@ function handleDisconnect(socket, io) {
   const game = activeGames.get(pin)
   if (!game) return
 
+  // Player-side and host-side cleanup are independent — a socket could in
+  // principle be both, so one must not early-return past the other.
   const player = game.players.get(socket.id)
-  if (!player) return
+  if (player) {
+    game.players.delete(socket.id)
 
-  game.players.delete(socket.id)
+    // Broadcast updated count (only meaningful in lobby; in active game just removes from map)
+    io.to(`session:${pin}`).emit('player-left', {
+      nickname: player.nickname,
+      playerCount: game.players.size
+    })
+    // Do NOT delete from DB — answers stay intact
+  }
 
-  // Broadcast updated count (only meaningful in lobby; in active game just removes from map)
-  io.to(`session:${pin}`).emit('player-left', {
-    nickname: player.nickname,
-    playerCount: game.players.size
-  })
-  // Do NOT delete from DB — answers stay intact
+  if (game.hostSocketIds.has(socket.id)) {
+    game.hostSocketIds.delete(socket.id)
+    if (game.hostSocketIds.size === 0) {
+      game.hostDisconnectTimer = setTimeout(() => endGame(pin), HOST_DISCONNECT_GRACE_MS)
+    }
+  }
 }
