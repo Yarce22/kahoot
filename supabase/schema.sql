@@ -49,7 +49,7 @@ CREATE TABLE answer_options (
 -- game_sessions
 CREATE TABLE game_sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  quiz_id UUID NOT NULL REFERENCES quizzes(id),
+  quiz_id UUID NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
   pin VARCHAR(6) NOT NULL,
   status TEXT NOT NULL DEFAULT 'lobby' CHECK (status IN ('lobby', 'active', 'finished')),
   started_at TIMESTAMPTZ,
