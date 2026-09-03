@@ -262,6 +262,93 @@ html, body, #app {
 }
 .input-sm:focus { border-color: var(--accent-purple); }
 
+/* ── Shared: Auth card layout ──────────────────────────────── */
+/* Used by every standalone credential screen — admin login, forgot
+   password, reset password. Global rather than per-view scoped styles
+   because all three are the same centred-card layout and were drifting
+   as verbatim copies. */
+.admin-login-view {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  position: relative;
+  z-index: 1;
+}
+
+.admin-login-card {
+  width: 100%;
+  max-width: 400px;
+  padding: 44px 40px;
+  animation: fadeSlideUp 0.5s ease both;
+}
+
+.admin-login-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, var(--accent-purple), #7c50e8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  margin: 0 auto 24px;
+  box-shadow: 0 8px 24px rgba(155, 114, 245, 0.4);
+}
+
+.admin-title {
+  font-family: 'Nunito', sans-serif;
+  font-weight: 900;
+  font-size: 28px;
+  text-align: center;
+  margin-bottom: 6px;
+  color: var(--text-primary);
+}
+
+.admin-subtitle {
+  color: var(--text-secondary);
+  font-size: 14px;
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+/* Deliberately NOT named .field-group/.field-label-sm even though that is
+   what the auth views used while these rules were copy-pasted into each of
+   them: HomeView already owns a scoped .field-group with different
+   semantics (plain margin, no flex column), so promoting those names to
+   global would silently restyle the landing page. */
+.auth-field {
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.auth-field-label {
+  font-family: 'Nunito', sans-serif;
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+/* Discreet secondary link under an auth card (forgot password / back to
+   login) — same treatment on every auth screen. */
+.auth-alt-link {
+  display: block;
+  text-align: center;
+  margin-top: 20px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-family: 'Nunito', sans-serif;
+  text-decoration: none;
+}
+
+.auth-alt-link:hover { color: var(--accent-purple); }
+
 /* ── Shared: Scrollbar ─────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -304,6 +391,15 @@ html, body, #app {
 
 .error-msg {
   color: var(--accent-coral);
+  font-family: 'Nunito', sans-serif;
+  font-weight: 700; font-size: 14px;
+  text-align: center; margin-bottom: 12px;
+}
+
+/* Positive counterpart of .error-msg — same metrics on purpose so a form
+   doesn't reflow depending on which of the two it is showing. */
+.success-msg {
+  color: var(--accent-green);
   font-family: 'Nunito', sans-serif;
   font-weight: 700; font-size: 14px;
   text-align: center; margin-bottom: 12px;

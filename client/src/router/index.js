@@ -24,6 +24,10 @@ const routes = [
   { path: '/results/:pin', component: () => import('../views/ResultsView.vue') },
   { path: '/leaderboard/:pin', component: () => import('../views/LeaderboardView.vue') },
   { path: '/admin/login', component: () => import('../views/admin/AdminLoginView.vue') },
+  // Public and unauthenticated — hence top-level views, not views/admin/,
+  // where everything else is either the login screen or behind a guard.
+  { path: '/forgot-password', component: () => import('../views/ForgotPasswordView.vue') },
+  { path: '/reset-password', component: () => import('../views/ResetPasswordView.vue') },
   { path: '/admin/quizzes', component: () => import('../views/admin/QuizListView.vue'), beforeEnter: requireAdmin },
   { path: '/admin/quizzes/new', component: () => import('../views/admin/QuizEditorView.vue'), beforeEnter: requireAdmin },
   { path: '/admin/quizzes/:id', component: () => import('../views/admin/QuizEditorView.vue'), beforeEnter: requireAdmin },

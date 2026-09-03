@@ -7,9 +7,11 @@
       <h1 class="admin-title">Panel Admin</h1>
       <p class="admin-subtitle">Ingresá con tu email y contraseña</p>
 
+      <p v-if="resetSuccess" class="success-msg" role="status">Contraseña actualizada. Iniciá sesión con tu nueva contraseña.</p>
+
       <form @submit.prevent="submit" novalidate>
-        <div class="field-group">
-          <label class="field-label-sm" for="email-input">Email</label>
+        <div class="auth-field">
+          <label class="auth-field-label" for="email-input">Email</label>
           <input
             id="email-input"
             v-model="email"
@@ -21,8 +23,8 @@
           />
         </div>
 
-        <div class="field-group">
-          <label class="field-label-sm" for="password-input">Contraseña</label>
+        <div class="auth-field">
+          <label class="auth-field-label" for="password-input">Contraseña</label>
           <input
             id="password-input"
             v-model="password"
@@ -40,13 +42,15 @@
           {{ loading ? 'Ingresando…' : 'Ingresar' }}
         </button>
       </form>
+
+      <router-link to="/forgot-password" class="auth-alt-link">¿Olvidaste tu contraseña?</router-link>
     </div>
   </div>
 </template>
 
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth.js'
 
 const email = ref('')
@@ -54,8 +58,13 @@ const password = ref('')
 const error = ref('')
 const loading = ref(false)
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
 const base = import.meta.env.VITE_API_BASE_URL || ''
+
+// Shown after a successful password reset redirects back here with
+// ?reset=success — see ResetPasswordView.vue.
+const resetSuccess = route.query.reset === 'success'
 
 async function submit() {
   error.value = ''
@@ -86,68 +95,3 @@ async function submit() {
   }
 }
 </script>
-
-<style scoped>
-.admin-login-view {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 32px 24px;
-  position: relative;
-  z-index: 1;
-}
-
-.admin-login-card {
-  width: 100%;
-  max-width: 400px;
-  padding: 44px 40px;
-  animation: fadeSlideUp 0.5s ease both;
-}
-
-.admin-login-icon {
-  width: 64px;
-  height: 64px;
-  border-radius: 20px;
-  background: linear-gradient(135deg, var(--accent-purple), #7c50e8);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 30px;
-  margin: 0 auto 24px;
-  box-shadow: 0 8px 24px rgba(155, 114, 245, 0.4);
-}
-
-.admin-title {
-  font-family: 'Nunito', sans-serif;
-  font-weight: 900;
-  font-size: 28px;
-  text-align: center;
-  margin-bottom: 6px;
-  color: var(--text-primary);
-}
-
-.admin-subtitle {
-  color: var(--text-secondary);
-  font-size: 14px;
-  text-align: center;
-  margin-bottom: 32px;
-}
-
-.field-group {
-  margin-bottom: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.field-label-sm {
-  font-family: 'Nunito', sans-serif;
-  font-weight: 700;
-  font-size: 12px;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-}
-</style>

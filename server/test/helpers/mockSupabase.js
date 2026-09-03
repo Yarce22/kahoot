@@ -14,16 +14,26 @@ import supabase from '../../src/lib/supabase.js'
 const originalFrom = supabase.from.bind(supabase)
 const originalRpc = typeof supabase.rpc === 'function' ? supabase.rpc.bind(supabase) : undefined
 
-function makeQueryBuilder(result) {
+function makeQueryBuilder(result, calls = [], table) {
   const resolved = Promise.resolve(result)
+  // record — the write-shaping calls (`insert`/`update`) and the filter that
+  // scopes them (`eq`) are the only things a test can use to assert WHAT was
+  // actually persisted, so their arguments are captured. Everything else
+  // stays a bare passthrough.
+  const record = (method) => (...args) => {
+    calls.push({ table, method, args })
+    return builder
+  }
   const builder = {
     select: () => builder,
-    eq: () => builder,
+    eq: record('eq'),
     in: () => builder,
+    is: () => builder,
+    or: () => builder,
     order: () => builder,
     limit: () => builder,
-    insert: () => builder,
-    update: () => builder,
+    insert: record('insert'),
+    update: record('update'),
     delete: () => builder,
     single: () => resolved,
     then: (onFulfilled, onRejected) => resolved.then(onFulfilled, onRejected)
@@ -39,11 +49,19 @@ function makeQueryBuilder(result) {
  * this keeps the mock honest about call order instead of silently returning
  * wrong data.
  *
+ * The returned restore function additionally carries a `.calls` array
+ * recording every `insert`/`update`/`eq` made across the whole sequence as
+ * `{ table, method, args }` — so a test can assert the payload that was
+ * actually sent (e.g. that a password was stored as a bcrypt hash, not
+ * plaintext), not merely that some write happened. Purely additive: callers
+ * that only need `restore()` can keep ignoring it.
+ *
  * @param {Array<{table?: string, rpc?: string, result: {data?: any, error?: any}}>} sequence
- * @returns {() => void} restore function — call in test teardown
+ * @returns {(() => void) & { calls: Array<{table: string, method: string, args: any[]}> }} restore function — call in test teardown
  */
 export function mockSupabaseSequence(sequence) {
   const queue = [...sequence]
+  const calls = []
 
   supabase.from = (table) => {
     const next = queue.shift()
@@ -54,7 +72,7 @@ export function mockSupabaseSequence(sequence) {
       const expected = next.rpc ? `rpc("${next.rpc}")` : `from("${next.table}")`
       throw new Error(`mockSupabaseSequence: expected ${expected} but got from("${table}")`)
     }
-    return makeQueryBuilder(next.result)
+    return makeQueryBuilder(next.result, calls, table)
   }
 
   supabase.rpc = (fn) => {
@@ -69,8 +87,12 @@ export function mockSupabaseSequence(sequence) {
     return Promise.resolve(next.result)
   }
 
-  return function restoreSupabase() {
+  function restoreSupabase() {
     supabase.from = originalFrom
     if (originalRpc) supabase.rpc = originalRpc
   }
+
+  restoreSupabase.calls = calls
+
+  return restoreSupabase
 }

@@ -90,6 +90,25 @@ CREATE INDEX idx_player_answers_question ON player_answers(question_id);
 CREATE INDEX idx_questions_quiz ON questions(quiz_id, order_index);
 CREATE INDEX idx_quizzes_owner ON quizzes(owner_id);
 
+-- ============================================================
+-- Password reset tokens (see migration 007)
+--
+-- Scoped forgot-password / reset-password flow for admins. Raw reset
+-- tokens are never persisted — only a SHA-256 hex digest (token_hash), so
+-- a database read alone can never be used to reset an admin's password.
+-- `used_at` prevents a token from being replayed once consumed.
+-- ============================================================
+CREATE TABLE password_reset_tokens (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  admin_id UUID NOT NULL REFERENCES admins(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX idx_password_reset_tokens_admin ON password_reset_tokens(admin_id);
+
 -- Race-safe admin role/status update (see migration 005). Serializes
 -- concurrent changes with an advisory lock so the system can never be left
 -- with zero active superadmins. Raises 'admin_not_found' / 'last_active_superadmin'.
