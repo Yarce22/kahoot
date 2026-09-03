@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 
 process.env.JWT_SECRET ??= 'test-secret'
 process.env.SUPABASE_URL ??= 'http://localhost:54321'
-process.env.SUPABASE_SERVICE_ROLE_KEY ??= 'test-service-role-key'
+process.env.SUPABASE_SECRET_KEY ??= 'test-secret-key'
 
 const { default: supabase } = await import('../src/lib/supabase.js')
 const { app } = await import('../src/index.js')

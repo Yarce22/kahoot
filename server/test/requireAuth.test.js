@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 
 process.env.JWT_SECRET ??= 'test-secret'
 process.env.SUPABASE_URL ??= 'http://localhost:54321'
-process.env.SUPABASE_SERVICE_ROLE_KEY ??= 'test-service-role-key'
+process.env.SUPABASE_SECRET_KEY ??= 'test-secret-key'
 // requireAuth/requireQuizOwner only enforce under AUTH_MODE=jwt (see
 // server/src/middleware/jwtGate.js) — the PR3 flip to jwt-by-default
 // hasn't happened yet, so tests set it explicitly, in-process.
