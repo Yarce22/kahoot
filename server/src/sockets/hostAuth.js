@@ -44,6 +44,17 @@ export async function jwtHostAuthMiddleware(socket, next) {
     return next(new Error('UNAUTHORIZED'))
   }
 
+  // Same audience rule as requireAuth on the HTTP side, including the same
+  // one-release tolerance for pre-deploy tokens with no aud claim: a missing
+  // aud is treated as 'admin', any OTHER audience (e.g. 'usuario') is
+  // refused. Without this, a usuario token passes signature verification and
+  // is blocked only incidentally, by an admins lookup on a users.id.
+  // TODO(next release): switch to verifyToken(token, { audience: 'admin' })
+  // once every legacy no-aud token has expired, and delete this check.
+  if (payload.aud !== undefined && payload.aud !== 'admin') {
+    return next(new Error('UNAUTHORIZED'))
+  }
+
   const { data: admin, error } = await supabase
     .from('admins')
     .select('id, email, role, is_active')
