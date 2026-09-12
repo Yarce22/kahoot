@@ -13,6 +13,7 @@ const { default: request } = await import('supertest')
 
 const SUPER = { id: 'super-1', email: 'boss@example.com', role: 'superadmin', is_active: true }
 const PLAIN = { id: 'admin-2', email: 'a2@example.com', role: 'admin', is_active: true }
+const STORE = 'Cerritos'
 
 const superToken = () => signToken({ sub: SUPER.id, email: SUPER.email })
 const plainToken = () => signToken({ sub: PLAIN.id, email: PLAIN.email })
@@ -46,22 +47,94 @@ test('GET /api/admins — a superadmin gets the admin list', async () => {
   }
 })
 
+// A superadmin cannot perform the manual backfill migration 010 demands
+// without first SEEING which admins still lack a store.
+test('GET /api/admins — the list read selects punto_de_venta', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } }, // requireAuth
+    { table: 'admins', result: { data: [], error: null } }     // list
+  ])
+  try {
+    const res = await request(app).get('/api/admins').set('Authorization', `Bearer ${superToken()}`)
+    assert.equal(res.status, 200)
+    const listSelect = restore.calls.filter((c) => c.table === 'admins' && c.method === 'select').at(-1)
+    assert.match(listSelect.args[0], /\bpunto_de_venta\b/)
+  } finally {
+    restore()
+  }
+})
+
 // --- create ---
 
 test('POST /api/admins — superadmin creates an admin with a role', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: SUPER, error: null } },                                   // requireAuth
     { table: 'admins', result: { data: null, error: { message: 'no rows' } } },                  // pre-check
-    { table: 'admins', result: { data: { id: 'new-1', email: 'n@x.com', role: 'admin', is_active: true }, error: null } } // insert
+    { table: 'admins', result: { data: { id: 'new-1', email: 'n@x.com', role: 'admin', is_active: true, punto_de_venta: STORE }, error: null } } // insert
+  ])
+  try {
+    const res = await request(app)
+      .post('/api/admins')
+      .set('Authorization', `Bearer ${superToken()}`)
+      .send({ email: 'n@x.com', password: 'pw12345', role: 'admin', punto_de_venta: STORE })
+    assert.equal(res.status, 201)
+    assert.equal(res.body.email, 'n@x.com')
+    assert.equal(res.body.role, 'admin')
+  } finally {
+    restore()
+  }
+})
+
+// admins.punto_de_venta is NOT NULL as of migration 010 and has no default —
+// an insert that omits it is a guaranteed runtime failure, so the API must
+// demand it up front.
+test('POST /api/admins — punto_de_venta is required (400), and nothing is inserted', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } } // requireAuth
   ])
   try {
     const res = await request(app)
       .post('/api/admins')
       .set('Authorization', `Bearer ${superToken()}`)
       .send({ email: 'n@x.com', password: 'pw12345', role: 'admin' })
+    assert.equal(res.status, 400)
+    assert.equal(restore.calls.filter((c) => c.method === 'insert').length, 0)
+  } finally {
+    restore()
+  }
+})
+
+test('POST /api/admins — a punto_de_venta outside the allowlist is rejected (400)', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } } // requireAuth
+  ])
+  try {
+    const res = await request(app)
+      .post('/api/admins')
+      .set('Authorization', `Bearer ${superToken()}`)
+      .send({ email: 'n@x.com', password: 'pw12345', punto_de_venta: 'Narnia' })
+    assert.equal(res.status, 400)
+    assert.equal(restore.calls.filter((c) => c.method === 'insert').length, 0)
+  } finally {
+    restore()
+  }
+})
+
+test('POST /api/admins — persists punto_de_venta and returns it', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } },                  // requireAuth
+    { table: 'admins', result: { data: null, error: { message: 'no rows' } } }, // pre-check
+    { table: 'admins', result: { data: { id: 'new-1', email: 'n@x.com', role: 'admin', is_active: true, punto_de_venta: 'Laureles' }, error: null } } // insert
+  ])
+  try {
+    const res = await request(app)
+      .post('/api/admins')
+      .set('Authorization', `Bearer ${superToken()}`)
+      .send({ email: 'n@x.com', password: 'pw12345', punto_de_venta: 'Laureles' })
     assert.equal(res.status, 201)
-    assert.equal(res.body.email, 'n@x.com')
-    assert.equal(res.body.role, 'admin')
+    assert.equal(res.body.punto_de_venta, 'Laureles')
+    const insert = restore.calls.find((c) => c.method === 'insert')
+    assert.equal(insert.args[0].punto_de_venta, 'Laureles')
   } finally {
     restore()
   }
@@ -114,6 +187,47 @@ test('PATCH /api/admins/:id — promotes a plain admin to superadmin', async () 
     assert.equal(res.status, 200)
     assert.equal(res.body.role, 'superadmin')
     assert.equal(res.body.password_hash, undefined)
+  } finally {
+    restore()
+  }
+})
+
+// The backfill PATCH: migration 010 refuses to run while any admin row still
+// has punto_de_venta NULL, and this endpoint is the only way an operator can
+// assign those stores through the API.
+test('PATCH /api/admins/:id — assigns punto_de_venta to an existing admin', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } }, // requireAuth
+    { table: 'admins', result: { data: { id: PLAIN.id, email: PLAIN.email, role: 'admin', is_active: true, punto_de_venta: 'Centenario' }, error: null } } // update
+  ])
+  try {
+    const res = await request(app)
+      .patch(`/api/admins/${PLAIN.id}`)
+      .set('Authorization', `Bearer ${superToken()}`)
+      .send({ punto_de_venta: 'Centenario' })
+    assert.equal(res.status, 200)
+    assert.equal(res.body.punto_de_venta, 'Centenario')
+    const update = restore.calls.find((c) => c.table === 'admins' && c.method === 'update')
+    assert.deepEqual(update.args[0], { punto_de_venta: 'Centenario' })
+    // `.at(-1)`: the FIRST eq('id', ...) belongs to requireAuth's own lookup.
+    const filter = restore.calls.filter((c) => c.table === 'admins' && c.method === 'eq' && c.args[0] === 'id').at(-1)
+    assert.equal(filter.args[1], PLAIN.id)
+  } finally {
+    restore()
+  }
+})
+
+test('PATCH /api/admins/:id — a punto_de_venta outside the allowlist is rejected (400)', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } } // requireAuth
+  ])
+  try {
+    const res = await request(app)
+      .patch(`/api/admins/${PLAIN.id}`)
+      .set('Authorization', `Bearer ${superToken()}`)
+      .send({ punto_de_venta: 'Narnia' })
+    assert.equal(res.status, 400)
+    assert.equal(restore.calls.filter((c) => c.method === 'update').length, 0)
   } finally {
     restore()
   }

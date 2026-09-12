@@ -8,11 +8,13 @@ import { httpError } from '../lib/httpError.js'
 import { getClientOrigin } from '../lib/clientOrigin.js'
 import emailService from '../lib/email.js'
 import { isUniqueViolation } from '../lib/pgErrors.js'
+import { PUNTOS_DE_VENTA } from '../lib/puntosDeVenta.js'
 
 export const authRouter = Router()
 
 const BCRYPT_COST = 12
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const PUNTO_DE_VENTA_ERROR = `punto_de_venta must be one of: ${PUNTOS_DE_VENTA.join(', ')}`
 const RESET_TOKEN_TTL_MS = 30 * 60 * 1000
 const MIN_PASSWORD_LENGTH = 8
 
@@ -272,10 +274,13 @@ function legacyAdminTokenMatches(req) {
 }
 
 async function createAdmin(req, res, next) {
-  const { email, password } = req.body ?? {}
+  const { email, password, punto_de_venta } = req.body ?? {}
 
   if (!email || !EMAIL_RE.test(email)) return next(httpError(400, 'A valid email is required'))
   if (!password) return next(httpError(400, 'password is required'))
+  // Same NOT NULL column as POST /api/admins (migration 010): the bootstrap
+  // admin must name its store too, and there is no safe default to fall back on.
+  if (!PUNTOS_DE_VENTA.includes(punto_de_venta)) return next(httpError(400, PUNTO_DE_VENTA_ERROR))
 
   // Note: the pre-check below is a UX fast path only, NOT the source of
   // truth for uniqueness — it has a TOCTOU race (two concurrent registers
@@ -294,7 +299,7 @@ async function createAdmin(req, res, next) {
 
   const { data: admin, error } = await supabase
     .from('admins')
-    .insert({ email, password_hash: passwordHash })
+    .insert({ email, password_hash: passwordHash, punto_de_venta })
     .select('id, email')
     .single()
 

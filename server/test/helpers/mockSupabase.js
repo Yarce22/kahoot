@@ -25,7 +25,9 @@ function makeQueryBuilder(result, calls = [], table) {
     return builder
   }
   const builder = {
-    select: () => builder,
+    // `select` is recorded too: the column list is the only observable proof
+    // that a read actually asks for a given column (e.g. punto_de_venta).
+    select: record('select'),
     eq: record('eq'),
     in: record('in'),
     is: () => builder,
@@ -50,7 +52,7 @@ function makeQueryBuilder(result, calls = [], table) {
  * wrong data.
  *
  * The returned restore function additionally carries a `.calls` array
- * recording every `insert`/`update`/`eq`/`in` made across the whole sequence
+ * recording every `select`/`insert`/`update`/`eq`/`in` made across the whole sequence
  * as `{ table, method, args }` — so a test can assert the payload that was
  * actually sent (e.g. that a password was stored as a bcrypt hash, not
  * plaintext) and the filter it was scoped by, not merely that some write
