@@ -1,4 +1,14 @@
 import { httpError } from '../lib/httpError.js'
+import { PUNTOS_DE_VENTA } from '../lib/puntosDeVenta.js'
+
+// hasStoreScope — the single fail-closed predicate every helper below shares.
+// An allowlist check rather than a null check: the realistic unbackfilled
+// shape is an ABSENT key (undefined), not an explicit null, and treating
+// either as "no filter" hands a non-superadmin unrestricted cross-store
+// access.
+function hasStoreScope(admin) {
+  return PUNTOS_DE_VENTA.includes(admin?.punto_de_venta)
+}
 
 // requireStoreScope.js — store-scoping helper module (design D4). Ownership
 // scoping (requireQuizOwner) can be a pure middleware because it resolves
@@ -17,7 +27,7 @@ import { httpError } from '../lib/httpError.js'
 export function requireStoreScope(req, res, next) {
   if (!req.admin) return next(httpError(401, 'Authentication required'))
 
-  if (req.admin.role !== 'superadmin' && req.admin.punto_de_venta === null) {
+  if (req.admin.role !== 'superadmin' && !hasStoreScope(req.admin)) {
     return next(httpError(403, 'Your account has no assigned punto de venta yet'))
   }
 
@@ -35,6 +45,13 @@ export function resolveStoreFilter(req, requested) {
   const admin = req.admin
 
   if (admin.role === 'superadmin') return requested ?? null
+
+  // Repeated here, not merely in the middleware wrapper: returning an
+  // unscoped admin's null/undefined store would make applyStoreFilter skip
+  // the filter entirely — the exact fail-open this module exists to prevent.
+  if (!hasStoreScope(admin)) {
+    throw httpError(403, 'Your account has no assigned punto de venta yet')
+  }
 
   if (requested !== undefined && requested !== null && requested !== admin.punto_de_venta) {
     throw httpError(403, 'You may only filter by your own punto de venta')
@@ -58,6 +75,11 @@ export function applyStoreFilter(query, effectiveStore, column = 'punto_de_venta
 export function assertSameStore(req, targetStore) {
   const admin = req.admin
   if (admin.role === 'superadmin') return
+  // Guarded before the comparison: without this, an unscoped caller writing
+  // an equally unscoped target (undefined === undefined) would be authorized.
+  if (!hasStoreScope(admin)) {
+    throw httpError(403, 'Your account has no assigned punto de venta yet')
+  }
   if (targetStore !== admin.punto_de_venta) {
     throw httpError(403, 'This action is restricted to your own punto de venta')
   }

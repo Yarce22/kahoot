@@ -27,6 +27,23 @@ test('requireStoreScope — 403 when a non-superadmin admin has punto_de_venta =
   assert.equal(err.status, 403)
 })
 
+// The realistic pre-backfill shape is an ABSENT key, not an explicit null:
+// every helper here must fail closed on undefined exactly as it does on null,
+// otherwise an unscoped admin gets unrestricted cross-store access.
+test('requireStoreScope — 403 when a non-superadmin admin has punto_de_venta undefined (key absent)', () => {
+  const req = { admin: { id: 'a1', role: 'admin' } }
+  let err
+  requireStoreScope(req, {}, (e) => { err = e })
+  assert.equal(err.status, 403)
+})
+
+test('requireStoreScope — 403 when a non-superadmin admin has a store outside the allowlist', () => {
+  const req = { admin: { id: 'a1', role: 'admin', punto_de_venta: 'Narnia' } }
+  let err
+  requireStoreScope(req, {}, (e) => { err = e })
+  assert.equal(err.status, 403)
+})
+
 test('requireStoreScope — passes through for a non-superadmin with a real store', () => {
   const req = { admin: { id: 'a1', role: 'admin', punto_de_venta: 'Cerritos' } }
   let called = 'not-called'
@@ -68,6 +85,16 @@ test('resolveStoreFilter — non-superadmin requesting a DIFFERENT store throws 
   assert.throws(() => resolveStoreFilter(req, 'Laureles'), (err) => err.status === 403)
 })
 
+test('resolveStoreFilter — non-superadmin with punto_de_venta undefined throws 403 (never resolves to "unrestricted")', () => {
+  const req = { admin: { role: 'admin' } }
+  assert.throws(() => resolveStoreFilter(req, undefined), (err) => err.status === 403)
+})
+
+test('resolveStoreFilter — non-superadmin with punto_de_venta null throws 403', () => {
+  const req = { admin: { role: 'admin', punto_de_venta: null } }
+  assert.throws(() => resolveStoreFilter(req, undefined), (err) => err.status === 403)
+})
+
 // ---- applyStoreFilter ----
 
 test('applyStoreFilter — filters the query by column when effectiveStore is set', () => {
@@ -101,4 +128,16 @@ test('assertSameStore — a non-superadmin targeting their own store is fine', (
 test('assertSameStore — a non-superadmin targeting a DIFFERENT store throws 403', () => {
   const req = { admin: { role: 'admin', punto_de_venta: 'Cerritos' } }
   assert.throws(() => assertSameStore(req, 'Laureles'), (err) => err.status === 403)
+})
+
+// Without an explicit unscoped-caller guard, undefined === undefined makes
+// this pass and authorizes the write.
+test('assertSameStore — a non-superadmin with punto_de_venta undefined throws 403 even for an undefined target', () => {
+  const req = { admin: { role: 'admin' } }
+  assert.throws(() => assertSameStore(req, undefined), (err) => err.status === 403)
+})
+
+test('assertSameStore — a non-superadmin with punto_de_venta null throws 403 even for a null target', () => {
+  const req = { admin: { role: 'admin', punto_de_venta: null } }
+  assert.throws(() => assertSameStore(req, null), (err) => err.status === 403)
 })
