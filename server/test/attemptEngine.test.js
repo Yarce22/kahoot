@@ -1,0 +1,171 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import {
+  gradeAnswer,
+  computeExpiry,
+  isAnswerLate,
+  gradeAttempt,
+  resolveAttemptStatus
+} from '../src/domain/attemptEngine.js'
+
+// ---- gradeAnswer ----
+
+test('gradeAnswer — closed question: correct option scores true and records selectedOptionId', () => {
+  const question = { id: 'q1', type: 'closed' }
+  const options = [
+    { id: 'o1', text: 'Yes', is_correct: true },
+    { id: 'o2', text: 'No', is_correct: false }
+  ]
+  const result = gradeAnswer(question, options, { selectedOptionId: 'o1' })
+  assert.equal(result.isCorrect, true)
+  assert.equal(result.selectedOptionId, 'o1')
+  assert.equal(result.answerText, null)
+})
+
+test('gradeAnswer — closed question: wrong option scores false', () => {
+  const question = { id: 'q1', type: 'closed' }
+  const options = [
+    { id: 'o1', text: 'Yes', is_correct: true },
+    { id: 'o2', text: 'No', is_correct: false }
+  ]
+  const result = gradeAnswer(question, options, { selectedOptionId: 'o2' })
+  assert.equal(result.isCorrect, false)
+})
+
+test('gradeAnswer — multiple question: exact correct set scores true, all-or-nothing', () => {
+  const question = { id: 'q2', type: 'multiple' }
+  const options = [
+    { id: 'a', text: 'A', is_correct: true },
+    { id: 'b', text: 'B', is_correct: false },
+    { id: 'c', text: 'C', is_correct: true }
+  ]
+  const result = gradeAnswer(question, options, { selectedOptionIds: ['a', 'c'] })
+  assert.equal(result.isCorrect, true)
+  assert.equal(result.selectedOptionId, null)
+  assert.equal(result.answerText, 'A, C')
+})
+
+test('gradeAnswer — multiple question: missing a correct option fails', () => {
+  const question = { id: 'q2', type: 'multiple' }
+  const options = [
+    { id: 'a', text: 'A', is_correct: true },
+    { id: 'b', text: 'B', is_correct: false },
+    { id: 'c', text: 'C', is_correct: true }
+  ]
+  const result = gradeAnswer(question, options, { selectedOptionIds: ['a'] })
+  assert.equal(result.isCorrect, false)
+})
+
+test('gradeAnswer — open question: keyword-CSV path matches via matchOpenAnswer (reused unmodified)', () => {
+  const question = { id: 'q3', type: 'open' }
+  const options = [{ id: 'o1', text: 'lechuga, tomate, cebolla', is_correct: true }]
+  const result = gradeAnswer(question, options, { answerText: 'Ensalada con lechuga, tomate y cebolla' })
+  assert.equal(result.isCorrect, true)
+  assert.equal(result.selectedOptionId, null)
+  assert.equal(result.answerText, 'Ensalada con lechuga, tomate y cebolla')
+})
+
+test('gradeAnswer — open question: missing a required keyword fails', () => {
+  const question = { id: 'q3', type: 'open' }
+  const options = [{ id: 'o1', text: 'lechuga, tomate, cebolla', is_correct: true }]
+  const result = gradeAnswer(question, options, { answerText: 'Ensalada con lechuga y tomate' })
+  assert.equal(result.isCorrect, false)
+})
+
+test('gradeAnswer — no submission at all defaults to isCorrect: false (never null)', () => {
+  const question = { id: 'q1', type: 'closed' }
+  const options = [{ id: 'o1', text: 'Yes', is_correct: true }]
+  const result = gradeAnswer(question, options, {})
+  assert.equal(result.isCorrect, false)
+})
+
+// ---- computeExpiry ----
+
+test('computeExpiry — adds timeBudgetSeconds to startedAt', () => {
+  const started = new Date('2026-01-01T00:00:00.000Z')
+  const expiry = computeExpiry(started, 600)
+  assert.equal(expiry.toISOString(), '2026-01-01T00:10:00.000Z')
+})
+
+test('computeExpiry — different budget produces a different expiry (triangulation)', () => {
+  const started = new Date('2026-01-01T00:00:00.000Z')
+  const expiry = computeExpiry(started, 60)
+  assert.equal(expiry.toISOString(), '2026-01-01T00:01:00.000Z')
+})
+
+// ---- isAnswerLate ----
+
+test('isAnswerLate — true when answeredAt is after expiresAt', () => {
+  const expiresAt = new Date('2026-01-01T00:10:00.000Z')
+  assert.equal(isAnswerLate(new Date('2026-01-01T00:10:01.000Z'), expiresAt), true)
+})
+
+test('isAnswerLate — false when answeredAt is before expiresAt', () => {
+  const expiresAt = new Date('2026-01-01T00:10:00.000Z')
+  assert.equal(isAnswerLate(new Date('2026-01-01T00:09:59.000Z'), expiresAt), false)
+})
+
+// ---- gradeAttempt ----
+
+test('gradeAttempt — computes correctCount/scorePercent, rounding to nearest integer', () => {
+  const expiresAt = new Date('2026-01-01T01:00:00.000Z')
+  const questions = [{ id: 'q1' }, { id: 'q2' }, { id: 'q3' }]
+  const answers = [
+    { questionId: 'q1', isCorrect: true, answeredAt: new Date('2026-01-01T00:01:00.000Z') },
+    { questionId: 'q2', isCorrect: false, answeredAt: new Date('2026-01-01T00:02:00.000Z') },
+    { questionId: 'q3', isCorrect: true, answeredAt: new Date('2026-01-01T00:03:00.000Z') }
+  ]
+  const result = gradeAttempt({ questions, answers, expiresAt })
+  assert.equal(result.totalQuestions, 3)
+  assert.equal(result.correctCount, 2)
+  assert.equal(result.scorePercent, 67) // 2/3 = 66.66... rounds to 67
+  assert.equal(result.discardedCount, 0)
+})
+
+test('gradeAttempt — zero questions scores 0%, not NaN/division-by-zero', () => {
+  const expiresAt = new Date('2026-01-01T01:00:00.000Z')
+  const result = gradeAttempt({ questions: [], answers: [], expiresAt })
+  assert.equal(result.totalQuestions, 0)
+  assert.equal(result.correctCount, 0)
+  assert.equal(result.scorePercent, 0)
+})
+
+test('gradeAttempt — late answers (answeredAt > expiresAt) are discarded: not counted correct, not counted at all', () => {
+  const expiresAt = new Date('2026-01-01T00:10:00.000Z')
+  const questions = [{ id: 'q1' }, { id: 'q2' }]
+  const answers = [
+    { questionId: 'q1', isCorrect: true, answeredAt: new Date('2026-01-01T00:05:00.000Z') },
+    { questionId: 'q2', isCorrect: true, answeredAt: new Date('2026-01-01T00:15:00.000Z') } // late
+  ]
+  const result = gradeAttempt({ questions, answers, expiresAt })
+  assert.equal(result.totalQuestions, 2)
+  assert.equal(result.correctCount, 1)
+  assert.equal(result.discardedCount, 1)
+})
+
+test('gradeAttempt — result has no pass/fail verdict field of any kind', () => {
+  const expiresAt = new Date('2026-01-01T01:00:00.000Z')
+  const result = gradeAttempt({ questions: [{ id: 'q1' }], answers: [], expiresAt })
+  assert.equal('passed' in result, false)
+  assert.equal('verdict' in result, false)
+})
+
+// ---- resolveAttemptStatus ----
+
+test('resolveAttemptStatus — "completed" when submittedAt is set, regardless of expiry', () => {
+  const status = resolveAttemptStatus({
+    submittedAt: new Date('2026-01-01T00:05:00.000Z'),
+    expiresAt: new Date('2026-01-01T00:10:00.000Z'),
+    now: new Date('2026-01-01T00:20:00.000Z')
+  })
+  assert.equal(status, 'completed')
+})
+
+test('resolveAttemptStatus — "expired" when past expiresAt without an explicit submit', () => {
+  const status = resolveAttemptStatus({
+    submittedAt: null,
+    expiresAt: new Date('2026-01-01T00:10:00.000Z'),
+    now: new Date('2026-01-01T00:20:00.000Z')
+  })
+  assert.equal(status, 'expired')
+})
