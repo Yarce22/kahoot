@@ -5,13 +5,13 @@ import { requireAdmin } from '../middleware/requireAdmin.js'
 import { authGate } from '../middleware/jwtGate.js'
 import { requireSuperadmin } from '../middleware/requireSuperadmin.js'
 import { httpError } from '../lib/httpError.js'
+import { isUniqueViolation } from '../lib/pgErrors.js'
 
 export const adminsRouter = Router()
 
 const BCRYPT_COST = 12
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const VALID_ROLES = ['admin', 'superadmin']
-const PG_UNIQUE_VIOLATION = '23505'
 
 // Every route here is superadmin-only. requireAdmin keeps the legacy token
 // gate honest under AUTH_MODE=legacy; authGate attaches req.admin under jwt;
@@ -115,10 +115,3 @@ adminsRouter.patch('/:id', ...superadminOnly, async (req, res, next) => {
   const updated = Array.isArray(data) ? data[0] : data
   res.json({ id: updated.id, email: updated.email, role: updated.role, is_active: updated.is_active })
 })
-
-function isUniqueViolation(error) {
-  if (!error) return false
-  if (error.code === PG_UNIQUE_VIOLATION) return true
-  const text = `${error.message ?? ''} ${error.details ?? ''}`.toLowerCase()
-  return text.includes('duplicate key') || text.includes('unique constraint') || text.includes('already exists')
-}

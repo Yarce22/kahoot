@@ -7,6 +7,7 @@ import { signToken } from '../lib/jwt.js'
 import { httpError } from '../lib/httpError.js'
 import { getClientOrigin } from '../lib/clientOrigin.js'
 import emailService from '../lib/email.js'
+import { isUniqueViolation } from '../lib/pgErrors.js'
 
 export const authRouter = Router()
 
@@ -51,22 +52,6 @@ const FORGOT_PASSWORD_MESSAGE = 'Si ese email está registrado, te enviamos un e
 // when the email doesn't exist leaks account existence via response time.
 // Generated once with: bcrypt.hashSync('not-a-real-password', 12)
 const DUMMY_HASH = '$2b$12$fLW7OVDfaQDuxoDkJ7EWWOiDMJL77XGv/x.iF1N4el6P300rNwPsq'
-
-// Postgres unique_violation error code
-const PG_UNIQUE_VIOLATION = '23505'
-
-// isUniqueViolation — the primary signal is the Postgres error code, but
-// supabase-js's error shape for constraint violations isn't formally
-// guaranteed across versions/transports (e.g. PostgREST can surface the
-// code differently, or omit it, while still describing the conflict in
-// `message`/`details`). Fall back to a text match on the unique-constraint
-// signal so the 409 mapping stays robust either way.
-function isUniqueViolation(error) {
-  if (!error) return false
-  if (error.code === PG_UNIQUE_VIOLATION) return true
-  const text = `${error.message ?? ''} ${error.details ?? ''}`.toLowerCase()
-  return text.includes('duplicate key') || text.includes('unique constraint') || text.includes('already exists')
-}
 
 // POST /api/auth/login — always open.
 authRouter.post('/login', async (req, res, next) => {
