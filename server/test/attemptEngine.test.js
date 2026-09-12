@@ -56,6 +56,36 @@ test('gradeAnswer — multiple question: missing a correct option fails', () => 
   assert.equal(result.isCorrect, false)
 })
 
+// A question whose options are ALL is_correct: false is misconfigured; the
+// naive set comparison scores an empty submission against an empty correct
+// set as a match (0 === 0, and [].every is vacuously true), handing a free
+// point to someone who answered nothing.
+test('gradeAnswer — multiple question with ZERO correct options and an empty submission is NOT correct', () => {
+  const question = { id: 'q2', type: 'multiple' }
+  const options = [
+    { id: 'a', text: 'A', is_correct: false },
+    { id: 'b', text: 'B', is_correct: false }
+  ]
+  const result = gradeAnswer(question, options, {})
+  assert.equal(result.isCorrect, false)
+})
+
+test('gradeAnswer — multiple question with ZERO correct options is never correct, whatever is picked', () => {
+  const question = { id: 'q2', type: 'multiple' }
+  const options = [{ id: 'a', text: 'A', is_correct: false }]
+  assert.equal(gradeAnswer(question, options, { selectedOptionIds: ['a'] }).isCorrect, false)
+})
+
+test('gradeAnswer — multiple question with real correct options but an empty submission is NOT correct', () => {
+  const question = { id: 'q2', type: 'multiple' }
+  const options = [
+    { id: 'a', text: 'A', is_correct: true },
+    { id: 'b', text: 'B', is_correct: false }
+  ]
+  const result = gradeAnswer(question, options, { selectedOptionIds: [] })
+  assert.equal(result.isCorrect, false)
+})
+
 test('gradeAnswer — open question: keyword-CSV path matches via matchOpenAnswer (reused unmodified)', () => {
   const question = { id: 'q3', type: 'open' }
   const options = [{ id: 'o1', text: 'lechuga, tomate, cebolla', is_correct: true }]

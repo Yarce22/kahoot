@@ -35,8 +35,13 @@ export function gradeAnswer(question, options, submission = {}) {
     // All-or-nothing: the picked set must match the correct set exactly —
     // no missing correct option, no extra incorrect one.
     const { picked, isCorrect } = evaluateMultipleAnswer(options, selectedOptionIds ?? [])
+    // Guard the degenerate match: with no option flagged is_correct, an empty
+    // submission compares an empty pick set against an empty correct set and
+    // scores TRUE. A misconfigured question can never be answered correctly,
+    // and answering nothing is never correct either.
+    const hasCorrectOption = options.some((o) => o.is_correct)
     return {
-      isCorrect,
+      isCorrect: hasCorrectOption && picked.length > 0 && isCorrect,
       selectedOptionId: null,
       answerText: picked.length
         ? options.filter((o) => picked.includes(o.id)).map((o) => o.text).join(', ')
