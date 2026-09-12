@@ -66,7 +66,15 @@ export function gradeAnswer(question, options, submission = {}) {
 // computeExpiry — started_at + time_budget_seconds, snapshotted at start so
 // a mid-attempt quiz edit can neither shorten nor extend an in-flight
 // attempt (spec: Async attempt bound by total_time_seconds).
+//
+// A non-positive or non-finite budget THROWS rather than silently producing a
+// degenerate window: quizzes.total_time_seconds is nullable by design (NULL =
+// not assignable async), and passing that through yielded expires_at ===
+// started_at (every answer instantly late) or an Invalid Date.
 export function computeExpiry(startedAt, timeBudgetSeconds) {
+  if (!Number.isFinite(timeBudgetSeconds) || timeBudgetSeconds <= 0) {
+    throw new Error(`computeExpiry: time budget must be a positive finite number of seconds, got ${timeBudgetSeconds}`)
+  }
   return new Date(new Date(startedAt).getTime() + timeBudgetSeconds * 1000)
 }
 

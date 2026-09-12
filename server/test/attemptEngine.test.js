@@ -123,6 +123,31 @@ test('computeExpiry — different budget produces a different expiry (triangulat
   assert.equal(expiry.toISOString(), '2026-01-01T00:01:00.000Z')
 })
 
+// quizzes.total_time_seconds is nullable by design (NULL = not assignable
+// async), so a bad budget CAN reach here — and silently produced a
+// zero-length window (null -> expires_at === started_at, every answer late)
+// or an Invalid Date (undefined). Both must be loud failures.
+test('computeExpiry — throws on a null time budget instead of a zero-length window', () => {
+  assert.throws(() => computeExpiry(new Date('2026-01-01T00:00:00.000Z'), null), /time budget/i)
+})
+
+test('computeExpiry — throws on an undefined time budget instead of an Invalid Date', () => {
+  assert.throws(() => computeExpiry(new Date('2026-01-01T00:00:00.000Z'), undefined), /time budget/i)
+})
+
+test('computeExpiry — throws on a zero time budget', () => {
+  assert.throws(() => computeExpiry(new Date('2026-01-01T00:00:00.000Z'), 0), /time budget/i)
+})
+
+test('computeExpiry — throws on a negative time budget', () => {
+  assert.throws(() => computeExpiry(new Date('2026-01-01T00:00:00.000Z'), -60), /time budget/i)
+})
+
+test('computeExpiry — throws on a non-finite time budget', () => {
+  assert.throws(() => computeExpiry(new Date('2026-01-01T00:00:00.000Z'), Infinity), /time budget/i)
+  assert.throws(() => computeExpiry(new Date('2026-01-01T00:00:00.000Z'), NaN), /time budget/i)
+})
+
 // ---- isAnswerLate ----
 
 test('isAnswerLate — true when answeredAt is after expiresAt', () => {
