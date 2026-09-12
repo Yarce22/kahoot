@@ -1,0 +1,45 @@
+import supabase from '../lib/supabase.js'
+import { verifyToken } from '../lib/jwt.js'
+import { httpError } from '../lib/httpError.js'
+
+// requireUserAuth — validates a usuario-audience JWT bearer token and
+// attaches req.user. Structural clone of requireAuth.js for the usuario
+// namespace (spec: Audience-Separated JWT Issuance, Usuario Account Must Be
+// Active).
+export async function requireUserAuth(req, res, next) {
+  const header = req.headers['authorization']
+  if (!header || !header.startsWith('Bearer ')) {
+    return next(httpError(401, 'Missing bearer token'))
+  }
+
+  const token = header.slice('Bearer '.length).trim()
+  if (!token) return next(httpError(401, 'Missing bearer token'))
+
+  let payload
+  try {
+    // Native audience check: jwt.verify REJECTS a token with no aud claim,
+    // which is exactly the required rule — a pre-deploy admin token (or any
+    // admin-audience token) can never satisfy this namespace.
+    payload = verifyToken(token, { audience: 'usuario' })
+  } catch {
+    return next(httpError(401, 'Invalid or expired token'))
+  }
+
+  const { data: user, error } = await supabase
+    .from('users')
+    .select('id, email, full_name, punto_de_venta, is_active')
+    .eq('id', payload.sub)
+    .single()
+
+  // Read fresh every request (same rationale as requireAuth): deactivating a
+  // usuario takes effect immediately even with an unexpired token.
+  if (error || !user || !user.is_active) return next(httpError(401, 'Invalid or expired token'))
+
+  req.user = {
+    id: user.id,
+    email: user.email,
+    fullName: user.full_name,
+    puntoDeVenta: user.punto_de_venta
+  }
+  next()
+}

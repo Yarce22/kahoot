@@ -15,14 +15,25 @@ export async function requireAuth(req, res, next) {
 
   let payload
   try {
+    // No native `audience` option here (unlike requireUserAuth) — this
+    // namespace must tolerate a pre-deploy token with NO aud claim for one
+    // release. The audience is instead checked manually below.
     payload = verifyToken(token)
   } catch {
     return next(httpError(401, 'Invalid or expired token'))
   }
 
+  // A missing aud is treated as 'admin' (transitional, pre-deploy tokens);
+  // any OTHER audience (e.g. 'usuario') is rejected outright.
+  // TODO(next release): switch to verifyToken(token, { audience: 'admin' })
+  // once every legacy no-aud token has expired, and delete this check.
+  if (payload.aud !== undefined && payload.aud !== 'admin') {
+    return next(httpError(401, 'Invalid or expired token'))
+  }
+
   const { data: admin, error } = await supabase
     .from('admins')
-    .select('id, email, role, is_active')
+    .select('id, email, role, is_active, punto_de_venta')
     .eq('id', payload.sub)
     .single()
 
@@ -30,6 +41,6 @@ export async function requireAuth(req, res, next) {
   // immediately, even while a previously-issued token is still unexpired.
   if (error || !admin || !admin.is_active) return next(httpError(401, 'Invalid or expired token'))
 
-  req.admin = { id: admin.id, email: admin.email, role: admin.role }
+  req.admin = { id: admin.id, email: admin.email, role: admin.role, punto_de_venta: admin.punto_de_venta }
   next()
 }
