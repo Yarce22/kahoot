@@ -23,18 +23,58 @@ function makeReq(token) {
   return { headers: { authorization: `Bearer ${token}` } }
 }
 
+// Every negative-audience case below mocks its identity lookup to SUCCEED.
+// Without that, the middleware would reach an unreachable database and the
+// resulting 401 would be indistinguishable from a real audience rejection —
+// the assertion would hold even with the audience check deleted.
+function activeAdminRow(id = 'admin-1') {
+  return {
+    table: 'admins',
+    result: {
+      data: { id, email: 'a@example.com', role: 'admin', is_active: true, punto_de_venta: 'Cerritos' },
+      error: null
+    }
+  }
+}
+
+function activeUserRow(id = 'user-1') {
+  return {
+    table: 'users',
+    result: {
+      data: { id, email: 'u@example.com', full_name: 'Uno', punto_de_venta: 'Cerritos', is_active: true },
+      error: null
+    }
+  }
+}
+
 test('audience isolation — a valid admin token is rejected by requireUserAuth', async () => {
   const adminToken = signToken({ sub: 'admin-1', email: 'a@example.com' }) // aud defaults 'admin'
+  const restore = mockSupabaseSequence([activeUserRow('admin-1')])
+  const req = makeReq(adminToken)
   let err
-  await requireUserAuth(makeReq(adminToken), {}, (e) => { err = e })
+  try {
+    await requireUserAuth(req, {}, (e) => { err = e })
+  } finally {
+    restore()
+  }
   assert.equal(err.status, 401)
+  assert.equal(err.message, 'Invalid or expired token')
+  assert.equal(req.user, undefined)
 })
 
 test('audience isolation — a valid usuario token is rejected by requireAuth (admin routes)', async () => {
   const usuarioToken = signToken({ sub: 'user-1', email: 'u@example.com', aud: 'usuario' })
+  const restore = mockSupabaseSequence([activeAdminRow('user-1')])
+  const req = makeReq(usuarioToken)
   let err
-  await requireAuth(makeReq(usuarioToken), {}, (e) => { err = e })
+  try {
+    await requireAuth(req, {}, (e) => { err = e })
+  } finally {
+    restore()
+  }
   assert.equal(err.status, 401)
+  assert.equal(err.message, 'Invalid or expired token')
+  assert.equal(req.admin, undefined)
 })
 
 test('audience isolation — a legacy token with NO aud claim is accepted by requireAuth (transitional)', async () => {
@@ -66,7 +106,15 @@ test('audience isolation — the SAME legacy no-aud token is rejected by require
     algorithm: 'HS256',
     expiresIn: '8h'
   })
+  const restore = mockSupabaseSequence([activeUserRow('admin-1')])
+  const req = makeReq(legacyToken)
   let err
-  await requireUserAuth(makeReq(legacyToken), {}, (e) => { err = e })
+  try {
+    await requireUserAuth(req, {}, (e) => { err = e })
+  } finally {
+    restore()
+  }
   assert.equal(err.status, 401)
+  assert.equal(err.message, 'Invalid or expired token')
+  assert.equal(req.user, undefined)
 })

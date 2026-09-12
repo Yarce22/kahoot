@@ -64,11 +64,31 @@ test('requireAuth — a legacy token with NO aud claim at all is accepted transi
   assert.equal(req.admin.id, 'admin-1')
 })
 
+// The DB lookup is mocked to SUCCEED on purpose: if the audience check were
+// removed, this request would sail through to an attached req.admin instead
+// of failing incidentally on an unreachable database. That makes the
+// rejection attributable to the audience check and nothing else.
 test('requireAuth — rejects a valid usuario-audience token', async () => {
   const usuarioToken = signToken({ sub: 'user-1', email: 'u@example.com', aud: 'usuario' })
+  const restore = mockSupabaseSequence([
+    {
+      table: 'admins',
+      result: {
+        data: { id: 'user-1', email: 'u@example.com', role: 'admin', is_active: true, punto_de_venta: 'Cerritos' },
+        error: null
+      }
+    }
+  ])
+  const req = makeReq(usuarioToken)
   let err
-  await requireAuth(makeReq(usuarioToken), {}, (e) => { err = e })
+  try {
+    await requireAuth(req, {}, (e) => { err = e })
+  } finally {
+    restore()
+  }
   assert.equal(err.status, 401)
+  assert.equal(err.message, 'Invalid or expired token')
+  assert.equal(req.admin, undefined)
 })
 
 test('requireAuth — attaches punto_de_venta to req.admin', async () => {
