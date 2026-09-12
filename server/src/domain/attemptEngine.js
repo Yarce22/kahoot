@@ -80,8 +80,21 @@ export function computeExpiry(startedAt, timeBudgetSeconds) {
 
 // isAnswerLate — server-side truth for the countdown; the client's own timer
 // is UX only and must never be trusted to enforce the cutoff.
+//
+// An unparseable date THROWS: every comparison against NaN is false, so the
+// old behaviour silently answered "not late" and turned a corrupt/missing
+// expires_at into a disabled cutoff — fail-open on exactly the check this
+// function exists to perform.
+function toValidDate(value, label) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`isAnswerLate: invalid date for ${label} (${value})`)
+  }
+  return date
+}
+
 export function isAnswerLate(answeredAt, expiresAt) {
-  return new Date(answeredAt) > new Date(expiresAt)
+  return toValidDate(answeredAt, 'answeredAt') > toValidDate(expiresAt, 'expiresAt')
 }
 
 // gradeAttempt — aggregate. Late answers (answeredAt > expiresAt) are

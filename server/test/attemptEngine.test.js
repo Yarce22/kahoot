@@ -160,6 +160,21 @@ test('isAnswerLate — false when answeredAt is before expiresAt', () => {
   assert.equal(isAnswerLate(new Date('2026-01-01T00:09:59.000Z'), expiresAt), false)
 })
 
+// Any comparison against NaN is false, so an invalid date silently reported
+// "not late" and disabled the server-side cutoff this module exists to
+// enforce. A malformed date here is a data-integrity bug, not a valid answer.
+test('isAnswerLate — throws on an invalid expiresAt instead of reporting "not late"', () => {
+  assert.throws(() => isAnswerLate('2030-01-01T00:00:00Z', new Date(NaN)), /invalid date/i)
+})
+
+test('isAnswerLate — throws on an invalid answeredAt', () => {
+  assert.throws(() => isAnswerLate('not-a-date', new Date('2026-01-01T00:10:00.000Z')), /invalid date/i)
+})
+
+test('isAnswerLate — throws on a null expiresAt', () => {
+  assert.throws(() => isAnswerLate(new Date('2026-01-01T00:00:00.000Z'), undefined), /invalid date/i)
+})
+
 // ---- gradeAttempt ----
 
 test('gradeAttempt — computes correctCount/scorePercent, rounding to nearest integer', () => {
