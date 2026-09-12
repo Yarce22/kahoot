@@ -26,7 +26,11 @@ export function gradeAnswer(question, options, submission = {}) {
     const option = options.find((o) => o.id === selectedOptionId)
     return {
       isCorrect: option?.is_correct ?? false,
-      selectedOptionId,
+      // An id that belongs to no option of THIS question is dropped, mirroring
+      // the 'multiple' branch's validIds sanitation. selected_option_id is an
+      // FK to answer_options at large, so a foreign id would satisfy the
+      // constraint and corrupt that other question's per-option stats.
+      selectedOptionId: option ? selectedOptionId : null,
       answerText: null
     }
   }

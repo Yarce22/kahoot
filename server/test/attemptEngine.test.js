@@ -32,6 +32,32 @@ test('gradeAnswer — closed question: wrong option scores false', () => {
   assert.equal(result.isCorrect, false)
 })
 
+// quiz_attempt_answers.selected_option_id is an FK to answer_options at
+// large, NOT scoped to this question — so an id borrowed from another
+// question/quiz satisfies the constraint and lands in the per-option stats.
+// The 'multiple' branch already sanitizes via validIds; this one must too.
+test('gradeAnswer — closed question: an id not among this question options is nulled out, not persisted', () => {
+  const question = { id: 'q1', type: 'closed' }
+  const options = [
+    { id: 'o1', text: 'Yes', is_correct: true },
+    { id: 'o2', text: 'No', is_correct: false }
+  ]
+  const result = gradeAnswer(question, options, { selectedOptionId: 'option-from-another-quiz' })
+  assert.equal(result.isCorrect, false)
+  assert.equal(result.selectedOptionId, null)
+})
+
+test('gradeAnswer — true_false question: a foreign option id is nulled out too', () => {
+  const question = { id: 'q4', type: 'true_false' }
+  const options = [
+    { id: 't1', text: 'True', is_correct: true },
+    { id: 'f1', text: 'False', is_correct: false }
+  ]
+  const result = gradeAnswer(question, options, { selectedOptionId: 'f-from-elsewhere' })
+  assert.equal(result.isCorrect, false)
+  assert.equal(result.selectedOptionId, null)
+})
+
 test('gradeAnswer — multiple question: exact correct set scores true, all-or-nothing', () => {
   const question = { id: 'q2', type: 'multiple' }
   const options = [
