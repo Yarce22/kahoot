@@ -21,9 +21,20 @@ export function signToken({ sub, email, aud = 'admin' }) {
 // pre-deploy tokens for free (see server/src/middleware/requireUserAuth.js).
 // When omitted (requireAuth's transitional case), no audience check runs at
 // all and the caller inspects payload.aud manually.
+//
+// Omitting the option and passing a BROKEN one are deliberately different:
+// a falsy/non-string audience used to silently degrade into "no audience
+// constraint", so an empty string or a typo'd option name turned a checked
+// verification into an unchecked one with no signal. That now throws.
 export function verifyToken(token, options = {}) {
+  const hasAudience = Object.prototype.hasOwnProperty.call(options, 'audience')
+
+  if (hasAudience && (typeof options.audience !== 'string' || options.audience === '')) {
+    throw new TypeError('verifyToken: options.audience must be a non-empty string when provided')
+  }
+
   return jwt.verify(token, process.env.JWT_SECRET, {
     algorithms: ['HS256'],
-    ...(options.audience ? { audience: options.audience } : {})
+    ...(hasAudience ? { audience: options.audience } : {})
   })
 }

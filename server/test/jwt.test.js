@@ -36,6 +36,24 @@ test('verifyToken — with { audience } accepts a token whose aud matches', () =
   assert.equal(payload.sub, 'user-1')
 })
 
+// A falsy audience used to mean "apply no audience constraint at all" — so a
+// typo'd/empty option silently downgraded a checked verification to an
+// unchecked one. Passing the option AT ALL must never weaken the check.
+test('verifyToken — an empty-string audience throws instead of verifying unconstrained', () => {
+  const token = signToken({ sub: 'user-1', email: 'u@example.com', aud: 'usuario' })
+  assert.throws(() => verifyToken(token, { audience: '' }), /audience/i)
+})
+
+test('verifyToken — a null audience throws instead of verifying unconstrained', () => {
+  const token = signToken({ sub: 'user-1', email: 'u@example.com', aud: 'usuario' })
+  assert.throws(() => verifyToken(token, { audience: null }), /audience/i)
+})
+
+test('verifyToken — a non-string audience throws', () => {
+  const token = signToken({ sub: 'user-1', email: 'u@example.com', aud: 'usuario' })
+  assert.throws(() => verifyToken(token, { audience: 123 }), /audience/i)
+})
+
 test('verifyToken — with { audience } rejects a token that has no aud claim at all', () => {
   // A pre-deploy legacy token, signed without the aud option at all — the
   // native audience check must reject a MISSING claim just as it rejects a
