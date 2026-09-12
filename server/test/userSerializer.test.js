@@ -2,10 +2,29 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   SAFE_QUESTION_SELECT,
-  FORBIDDEN_KEYS,
   serializeQuestionForUser,
   assertNoAnswerLeak
 } from '../src/lib/userSerializer.js'
+
+// EXPECTED_FORBIDDEN_KEYS — written INDEPENDENTLY of FORBIDDEN_KEYS on
+// purpose. Iterating the module's own list to build the cases was
+// tautological: it could never catch a key being dropped from (or missing
+// in) the implementation, which is the only failure mode that matters here.
+//
+// Both spellings of every leaky concept are listed because the codebase emits
+// both: snake_case at the DB layer (is_correct, correct_option_id) and
+// camelCase out of the domain layer (attemptEngine's gradeAnswer/gradeAttempt
+// return isCorrect).
+const EXPECTED_FORBIDDEN_KEYS = [
+  'is_correct',
+  'isCorrect',
+  'correct_option_id',
+  'correctOptionId',
+  'correct_option_ids',
+  'correctOptionIds',
+  'correct_answer_text',
+  'correctAnswerText'
+]
 
 test('SAFE_QUESTION_SELECT — never selects answer_options.is_correct', () => {
   assert.equal(SAFE_QUESTION_SELECT.includes('is_correct'), false)
@@ -60,10 +79,16 @@ test('assertNoAnswerLeak — throws when a forbidden key appears nested inside a
   assert.throws(() => assertNoAnswerLeak(payload))
 })
 
-test('assertNoAnswerLeak — throws for every declared forbidden key, one at a time', () => {
-  for (const key of FORBIDDEN_KEYS) {
+test('assertNoAnswerLeak — throws for every independently-listed forbidden key, one at a time', () => {
+  for (const key of EXPECTED_FORBIDDEN_KEYS) {
     assert.throws(() => assertNoAnswerLeak({ nested: { [key]: 'leak' } }), `expected throw for key "${key}"`)
   }
+})
+
+test('assertNoAnswerLeak — throws on the camelCase isCorrect that attemptEngine actually emits', () => {
+  // gradeAnswer returns { isCorrect, selectedOptionId, answerText }; spreading
+  // that straight into a usuario response is the most likely real-world leak.
+  assert.throws(() => assertNoAnswerLeak({ answer: { isCorrect: true, answerText: 'x' } }))
 })
 
 test('assertNoAnswerLeak — does NOT throw on a clean payload with only safe fields', () => {

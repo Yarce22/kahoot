@@ -21,11 +21,18 @@
 // admin-scoped read inside attemptEngine.
 export const SAFE_QUESTION_SELECT = 'id, text, type, order_index, answer_options(id, text)'
 
+// Both spellings of every leaky concept: snake_case is what the DB layer
+// emits (is_correct, correct_option_id) and camelCase is what the domain
+// layer emits — attemptEngine's gradeAnswer/gradeAttempt return `isCorrect`,
+// which was missing here and is the likeliest real leak vector of all.
 export const FORBIDDEN_KEYS = [
   'is_correct',
+  'isCorrect',
   'correct_option_id',
   'correctOptionId',
+  'correct_option_ids',
   'correctOptionIds',
+  'correct_answer_text',
   'correctAnswerText'
 ]
 
