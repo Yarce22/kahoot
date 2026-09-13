@@ -111,7 +111,13 @@ adminsRouter.patch('/:id', ...superadminOnly, async (req, res, next) => {
     const { data, error } = await supabase.rpc('update_admin_role_status', {
       target_id: id,
       new_role: role ?? null,
-      new_active: is_active ?? null
+      new_active: is_active ?? null,
+      // Carried INSIDE the same locked transaction (migration 011) rather than
+      // as a follow-up write: applying the role/status change first and
+      // punto_de_venta second meant a failure of the second left the first
+      // already committed while the caller saw a total failure. NULL means
+      // "leave unchanged" here, same as new_role/new_active.
+      new_punto_de_venta: punto_de_venta ?? null
     })
 
     if (error) {
@@ -130,11 +136,13 @@ adminsRouter.patch('/:id', ...superadminOnly, async (req, res, next) => {
     // The function RETURNS the full admins row (incl. password_hash) — expose
     // only the safe fields.
     updated = Array.isArray(data) ? data[0] : data
-  }
 
-  // punto_de_venta is a plain column update: it carries none of the
-  // last-active-superadmin invariant the RPC exists to serialize.
-  if (punto_de_venta !== undefined) {
+  // punto_de_venta ALONE is a plain column update: it carries none of the
+  // last-active-superadmin invariant the RPC exists to serialize. Combined with
+  // role/is_active it is NOT reachable here — the RPC above already applied it
+  // atomically, and re-writing it separately is what made a combined PATCH
+  // partially mutating.
+  } else if (punto_de_venta !== undefined) {
     const { data: row, error: storeError } = await supabase
       .from('admins')
       .update({ punto_de_venta })

@@ -233,6 +233,71 @@ test('PATCH /api/admins/:id — a punto_de_venta outside the allowlist is reject
   }
 })
 
+// --- atomicity of a combined role/status + punto_de_venta PATCH ---
+//
+// Running the RPC and then a separate `.update({ punto_de_venta })` made the
+// role/status change durably committed before the second write was even
+// attempted: if that second write failed, the caller saw a total failure while
+// the role had silently changed. Everything must travel in the ONE
+// advisory-locked transaction (migration 011).
+
+test('PATCH /api/admins/:id — role + punto_de_venta travel in a single write', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } }, // requireAuth
+    {
+      rpc: 'update_admin_role_status',
+      result: {
+        data: { id: PLAIN.id, email: PLAIN.email, password_hash: 'secret-hash', role: 'superadmin', is_active: true, punto_de_venta: 'Laureles' },
+        error: null
+      }
+    }
+  ])
+  try {
+    const res = await request(app)
+      .patch(`/api/admins/${PLAIN.id}`)
+      .set('Authorization', `Bearer ${superToken()}`)
+      .send({ role: 'superadmin', punto_de_venta: 'Laureles' })
+
+    assert.equal(res.status, 200)
+    assert.equal(res.body.role, 'superadmin')
+    assert.equal(res.body.punto_de_venta, 'Laureles')
+
+    // Exactly one write, and it carries every field.
+    const writes = restore.calls.filter((c) => c.method === 'rpc' || c.method === 'update')
+    assert.equal(writes.length, 1)
+    assert.equal(writes[0].method, 'rpc')
+    assert.deepEqual(writes[0].args[0], {
+      target_id: PLAIN.id,
+      new_role: 'superadmin',
+      new_active: null,
+      new_punto_de_venta: 'Laureles'
+    })
+  } finally {
+    restore()
+  }
+})
+
+test('PATCH /api/admins/:id — a failed combined PATCH leaves no partial role change behind', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } }, // requireAuth
+    { rpc: 'update_admin_role_status', result: { data: null, error: { message: 'admin_not_found' } } }
+  ])
+  try {
+    const res = await request(app)
+      .patch('/api/admins/does-not-exist')
+      .set('Authorization', `Bearer ${superToken()}`)
+      .send({ role: 'superadmin', punto_de_venta: 'Laureles' })
+
+    assert.equal(res.status, 404)
+    // The single transaction rolled back as a whole: no second write was ever
+    // issued, so there is no committed role change to leave dangling.
+    assert.equal(restore.calls.filter((c) => c.method === 'update').length, 0)
+    assert.equal(restore.calls.filter((c) => c.method === 'rpc').length, 1)
+  } finally {
+    restore()
+  }
+})
+
 // PostgREST resolves `.single()` over zero rows as an ERROR (PGRST116), not as
 // `{ data: null, error: null }` — so the `if (!row)` 404 branch was dead code
 // and an unknown id leaked a raw 500 with the Postgres message in it.

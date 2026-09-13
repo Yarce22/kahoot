@@ -53,6 +53,7 @@ function makeQueryBuilder(result, calls = [], table) {
  *
  * The returned restore function additionally carries a `.calls` array
  * recording every `select`/`insert`/`update`/`eq`/`in` made across the whole sequence
+ * (plus every `rpc`, as `{ table: fnName, method: 'rpc', args: [params] }`)
  * as `{ table, method, args }` — so a test can assert the payload that was
  * actually sent (e.g. that a password was stored as a bcrypt hash, not
  * plaintext) and the filter it was scoped by, not merely that some write
@@ -78,7 +79,7 @@ export function mockSupabaseSequence(sequence) {
     return makeQueryBuilder(next.result, calls, table)
   }
 
-  supabase.rpc = (fn) => {
+  supabase.rpc = (fn, args) => {
     const next = queue.shift()
     if (!next) {
       throw new Error(`mockSupabaseSequence: unexpected supabase.rpc("${fn}") call — queue exhausted`)
@@ -87,6 +88,10 @@ export function mockSupabaseSequence(sequence) {
       const expected = next.table ? `from("${next.table}")` : `rpc("${next.rpc}")`
       throw new Error(`mockSupabaseSequence: expected ${expected} but got rpc("${fn}")`)
     }
+    // Recorded like insert/update: the RPC arguments are the only observable
+    // proof of WHAT a route asked the database function to change — and of how
+    // many writes it took to get there.
+    calls.push({ table: fn, method: 'rpc', args: [args] })
     return Promise.resolve(next.result)
   }
 
