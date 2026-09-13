@@ -300,7 +300,11 @@ async function createAdmin(req, res, next) {
   const { data: admin, error } = await supabase
     .from('admins')
     .insert({ email, password_hash: passwordHash, punto_de_venta })
-    .select('id, email')
+    // punto_de_venta is read back and returned so both admin-creation paths
+    // answer with the same shape — POST /api/admins already exposes it, and the
+    // column is required on the way in, so hiding it on the way out is just an
+    // inconsistency a caller has to work around.
+    .select('id, email, punto_de_venta')
     .single()
 
   if (error) {
@@ -310,5 +314,5 @@ async function createAdmin(req, res, next) {
     return next(error)
   }
 
-  res.status(201).json({ admin: { id: admin.id, email: admin.email } })
+  res.status(201).json({ admin: { id: admin.id, email: admin.email, punto_de_venta: admin.punto_de_venta } })
 }

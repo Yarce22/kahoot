@@ -79,10 +79,13 @@ test('POST /api/auth/register — a punto_de_venta outside the allowlist is reje
   }
 })
 
-test('POST /api/auth/register — persists punto_de_venta on the bootstrap admin', async () => {
+// The response must expose punto_de_venta too, not just persist it: this is the
+// other admin-creation path, and POST /api/admins already returns it. A caller
+// that has to guess which shape it got back is a caller that will get it wrong.
+test('POST /api/auth/register — persists punto_de_venta on the bootstrap admin and returns it', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: null, error: { message: 'no rows' } } },                                  // pre-check
-    { table: 'admins', result: { data: { id: 'boot-1', email: 'first@example.com' }, error: null } }             // insert
+    { table: 'admins', result: { data: { id: 'boot-1', email: 'first@example.com', punto_de_venta: 'Laureles' }, error: null } } // insert
   ])
   try {
     const res = await request(app)
@@ -93,6 +96,11 @@ test('POST /api/auth/register — persists punto_de_venta on the bootstrap admin
     assert.equal(res.status, 201)
     const insert = restore.calls.find((c) => c.method === 'insert')
     assert.equal(insert.args[0].punto_de_venta, 'Laureles')
+    assert.equal(res.body.admin.punto_de_venta, 'Laureles')
+    // The write-back read has to ASK for the column, or the value above could
+    // only ever be echoed from the request body.
+    const insertSelect = restore.calls.filter((c) => c.method === 'select').at(-1)
+    assert.match(insertSelect.args[0], /\bpunto_de_venta\b/)
   } finally {
     restore()
   }
