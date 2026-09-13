@@ -233,6 +233,50 @@ test('PATCH /api/admins/:id — a punto_de_venta outside the allowlist is reject
   }
 })
 
+// PostgREST resolves `.single()` over zero rows as an ERROR (PGRST116), not as
+// `{ data: null, error: null }` — so the `if (!row)` 404 branch was dead code
+// and an unknown id leaked a raw 500 with the Postgres message in it.
+test('PATCH /api/admins/:id — punto_de_venta-only on an unknown id maps to 404, not 500', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } }, // requireAuth
+    {
+      table: 'admins',
+      result: {
+        data: null,
+        error: { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' }
+      }
+    } // update matched no row
+  ])
+  try {
+    const res = await request(app)
+      .patch('/api/admins/does-not-exist')
+      .set('Authorization', `Bearer ${superToken()}`)
+      .send({ punto_de_venta: 'Centenario' })
+    assert.equal(res.status, 404)
+    assert.equal(res.body.error, 'Admin not found')
+  } finally {
+    restore()
+  }
+})
+
+// The 404 mapping must stay narrow: a genuine write failure is still a 500, not
+// a misleading "Admin not found".
+test('PATCH /api/admins/:id — a real write error is NOT masked as 404', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } }, // requireAuth
+    { table: 'admins', result: { data: null, error: { code: '08006', message: 'connection failure' } } }
+  ])
+  try {
+    const res = await request(app)
+      .patch(`/api/admins/${PLAIN.id}`)
+      .set('Authorization', `Bearer ${superToken()}`)
+      .send({ punto_de_venta: 'Centenario' })
+    assert.equal(res.status, 500)
+  } finally {
+    restore()
+  }
+})
+
 test('PATCH /api/admins/:id — cannot deactivate your own account (400)', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: SUPER, error: null } } // requireAuth (self-check trips before any target fetch)

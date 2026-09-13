@@ -5,7 +5,7 @@ import { requireAdmin } from '../middleware/requireAdmin.js'
 import { authGate } from '../middleware/jwtGate.js'
 import { requireSuperadmin } from '../middleware/requireSuperadmin.js'
 import { httpError } from '../lib/httpError.js'
-import { isUniqueViolation } from '../lib/pgErrors.js'
+import { isUniqueViolation, isNoRowsReturned } from '../lib/pgErrors.js'
 import { PUNTOS_DE_VENTA } from '../lib/puntosDeVenta.js'
 
 export const adminsRouter = Router()
@@ -142,8 +142,15 @@ adminsRouter.patch('/:id', ...superadminOnly, async (req, res, next) => {
       .select('id, email, role, is_active, punto_de_venta')
       .single()
 
+    // `.single()` over zero rows resolves as a PGRST116 ERROR (which carries no
+    // `.status`, so errorHandler would fall through to a raw 500) — never as
+    // `{ data: null, error: null }`. An unknown id is a 404 here, exactly like
+    // the RPC's 'admin_not_found' above; any OTHER error is a real failure and
+    // must not be disguised as one.
+    if (isNoRowsReturned(storeError) || (!storeError && !row)) {
+      return next(httpError(404, 'Admin not found'))
+    }
     if (storeError) return next(storeError)
-    if (!row) return next(httpError(404, 'Admin not found'))
     updated = row
   }
 
