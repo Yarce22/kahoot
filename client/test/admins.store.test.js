@@ -27,12 +27,27 @@ describe('admins store', () => {
     expect(store.admins).toHaveLength(1)
   })
 
+  // admins.punto_de_venta is NOT NULL with no default (migration 010) and
+  // POST /api/admins rejects a payload without it, so the store MUST send it —
+  // omitting it made every creation fail with a 400.
   it('createAdmin posts and appends the new admin', async () => {
-    post.mockResolvedValue({ id: 'new', email: 'n@x.com', role: 'superadmin', is_active: true })
+    post.mockResolvedValue({ id: 'new', email: 'n@x.com', role: 'superadmin', is_active: true, punto_de_venta: 'Laureles' })
     const store = useAdminsStore()
-    await store.createAdmin({ email: 'n@x.com', password: 'pw', role: 'superadmin' })
-    expect(post).toHaveBeenCalledWith('/api/admins', { email: 'n@x.com', password: 'pw', role: 'superadmin' })
+    await store.createAdmin({ email: 'n@x.com', password: 'pw', role: 'superadmin', punto_de_venta: 'Laureles' })
+    expect(post).toHaveBeenCalledWith('/api/admins', {
+      email: 'n@x.com',
+      password: 'pw',
+      role: 'superadmin',
+      punto_de_venta: 'Laureles'
+    })
     expect(store.admins[0].email).toBe('n@x.com')
+  })
+
+  it('createAdmin sends punto_de_venta verbatim, never a default', async () => {
+    post.mockResolvedValue({ id: 'new', email: 'n@x.com', role: 'admin', is_active: true, punto_de_venta: 'Circunvalar' })
+    const store = useAdminsStore()
+    await store.createAdmin({ email: 'n@x.com', password: 'pw', role: 'admin', punto_de_venta: 'Circunvalar' })
+    expect(post.mock.calls[0][1].punto_de_venta).toBe('Circunvalar')
   })
 
   it('updateAdmin patches and merges the server response into the row', async () => {

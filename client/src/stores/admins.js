@@ -23,9 +23,13 @@ export const useAdminsStore = defineStore('admins', {
         this.loading = false
       }
     },
-    async createAdmin({ email, password, role }) {
+    // punto_de_venta is part of the payload, not optional: admins.punto_de_venta
+    // is NOT NULL with no default (migration 010) and POST /api/admins rejects
+    // a body without it (400). There is no safe store to fall back to, so the
+    // caller must always supply one.
+    async createAdmin({ email, password, role, punto_de_venta }) {
       const api = useAdminApi()
-      const admin = await api.post('/api/admins', { email, password, role })
+      const admin = await api.post('/api/admins', { email, password, role, punto_de_venta })
       this.admins.push({ ...admin, created_at: new Date().toISOString() })
       return admin
     },

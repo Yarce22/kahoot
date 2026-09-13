@@ -21,11 +21,17 @@
         Crear administrador
       </h2>
       <form class="create-form" @submit.prevent="submitCreate" novalidate>
-        <input v-model="form.email" class="input-sm" type="email" placeholder="email@ejemplo.com" autocomplete="off" />
-        <input v-model="form.password" class="input-sm" type="password" placeholder="Contraseña" autocomplete="new-password" />
+        <input id="email-input" v-model="form.email" class="input-sm" type="email" placeholder="email@ejemplo.com" autocomplete="off" />
+        <input id="password-input" v-model="form.password" class="input-sm" type="password" placeholder="Contraseña" autocomplete="new-password" />
         <select v-model="form.role" class="input-sm">
           <option value="admin">Admin</option>
           <option value="superadmin">Superadmin</option>
+        </select>
+        <!-- Required by the API: admins.punto_de_venta is NOT NULL with no
+             default, so a creation without a store is rejected with a 400. -->
+        <select id="punto-de-venta-select" v-model="form.punto_de_venta" class="input-sm">
+          <option value="" disabled>Punto de venta…</option>
+          <option v-for="p in PUNTOS_DE_VENTA" :key="p" :value="p">{{ p }}</option>
         </select>
         <button type="submit" class="btn btn-primary" :disabled="creating">
           {{ creating ? 'Creando…' : 'Crear' }}
@@ -101,11 +107,12 @@
 import { ref, onMounted } from 'vue'
 import { useAdminsStore } from '../../stores/admins.js'
 import { useAuthStore } from '../../stores/auth.js'
+import { PUNTOS_DE_VENTA } from '../../lib/puntosDeVenta.js'
 
 const store = useAdminsStore()
 const auth = useAuthStore()
 
-const form = ref({ email: '', password: '', role: 'admin' })
+const form = ref({ email: '', password: '', role: 'admin', punto_de_venta: '' })
 const creating = ref(false)
 const busyId = ref(null)
 const errorMsg = ref('')
@@ -118,14 +125,21 @@ async function submitCreate() {
     errorMsg.value = 'Email y contraseña son requeridos.'
     return
   }
+  // Checked client-side too so the operator sees the problem next to the
+  // control instead of as a round-trip 400 from the API.
+  if (!form.value.punto_de_venta) {
+    errorMsg.value = 'Elegí un punto de venta.'
+    return
+  }
   creating.value = true
   try {
     await store.createAdmin({
       email: form.value.email.trim(),
       password: form.value.password,
-      role: form.value.role
+      role: form.value.role,
+      punto_de_venta: form.value.punto_de_venta
     })
-    form.value = { email: '', password: '', role: 'admin' }
+    form.value = { email: '', password: '', role: 'admin', punto_de_venta: '' }
   } catch (e) {
     errorMsg.value = e.message
   } finally {
