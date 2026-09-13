@@ -123,10 +123,17 @@ CREATE INDEX idx_password_reset_tokens_admin ON password_reset_tokens(admin_id);
 -- Race-safe admin role/status update (see migration 005). Serializes
 -- concurrent changes with an advisory lock so the system can never be left
 -- with zero active superadmins. Raises 'admin_not_found' / 'last_active_superadmin'.
+-- new_punto_de_venta is part of the signature here (final state, post migration
+-- 011): PATCH /api/admins/:id ALWAYS calls this RPC with all four named
+-- arguments, so a database provisioned from the 3-argument version would fail
+-- every role/is_active PATCH with PGRST202. NULL means "leave unchanged"
+-- (COALESCE), exactly like new_role and new_active — the column is NOT NULL, so
+-- the function can never be used to blank it.
 CREATE OR REPLACE FUNCTION update_admin_role_status(
   target_id uuid,
   new_role text DEFAULT NULL,
-  new_active boolean DEFAULT NULL
+  new_active boolean DEFAULT NULL,
+  new_punto_de_venta text DEFAULT NULL
 )
 RETURNS admins
 LANGUAGE plpgsql
@@ -138,7 +145,8 @@ BEGIN
 
   UPDATE admins
      SET role = COALESCE(new_role, role),
-         is_active = COALESCE(new_active, is_active)
+         is_active = COALESCE(new_active, is_active),
+         punto_de_venta = COALESCE(new_punto_de_venta, punto_de_venta)
    WHERE id = target_id
   RETURNING * INTO result;
 
