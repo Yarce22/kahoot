@@ -73,7 +73,23 @@ export function gradeAnswer(question, options, submission = {}) {
 // disabled cutoff — fail-open on exactly the check isAnswerLate exists to
 // perform — while computeExpiry turned a missing started_at into an Invalid
 // Date expiry that only blew up later, far from its cause.
+//
+// The NaN check ALONE is not enough: `new Date(null)` is epoch-0, a perfectly
+// valid Date, so a null expires_at sailed through and made every answer late —
+// scoring the attempt 0% — while a null started_at anchored the window in 1970.
+// The accepted shapes are therefore allowlisted BEFORE coercion: a Date, an ISO
+// string (what supabase-js returns for timestamptz), or an epoch number.
+// Anything else — null, undefined, {}, [], true — is rejected outright.
 function toValidDate(value, label) {
+  const isCoercible =
+    value instanceof Date ||
+    typeof value === 'string' ||
+    (typeof value === 'number' && Number.isFinite(value))
+
+  if (!isCoercible) {
+    throw new Error(`invalid date for ${label} (${value})`)
+  }
+
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) {
     throw new Error(`invalid date for ${label} (${value})`)

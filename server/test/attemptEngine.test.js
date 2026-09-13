@@ -217,8 +217,41 @@ test('isAnswerLate — throws on an invalid answeredAt', () => {
   assert.throws(() => isAnswerLate('not-a-date', new Date('2026-01-01T00:10:00.000Z')), /invalid date/i)
 })
 
+// `new Date(null)` is epoch-0 — a perfectly VALID Date — so a null expires_at
+// slipped past the NaN check and made every answer "late", scoring the whole
+// attempt 0%. null must fail exactly like NaN does, and so must every other
+// shape that is not a Date / string / number.
 test('isAnswerLate — throws on a null expiresAt', () => {
+  assert.throws(() => isAnswerLate(new Date('2026-01-01T00:00:00.000Z'), null), /invalid date/i)
+})
+
+test('isAnswerLate — throws on an undefined expiresAt', () => {
   assert.throws(() => isAnswerLate(new Date('2026-01-01T00:00:00.000Z'), undefined), /invalid date/i)
+})
+
+test('isAnswerLate — throws on a null answeredAt', () => {
+  assert.throws(() => isAnswerLate(null, new Date('2026-01-01T00:10:00.000Z')), /invalid date/i)
+})
+
+test('isAnswerLate — throws on a non-date shape rather than coercing it', () => {
+  const expiresAt = new Date('2026-01-01T00:10:00.000Z')
+  assert.throws(() => isAnswerLate({}, expiresAt), /invalid date/i)
+  assert.throws(() => isAnswerLate([], expiresAt), /invalid date/i)
+  assert.throws(() => isAnswerLate(true, expiresAt), /invalid date/i)
+})
+
+// A null expires_at would otherwise discard every answer of the attempt
+// silently — the aggregate, not just the predicate, must refuse to score it.
+test('gradeAttempt — throws on a null expiresAt instead of scoring every answer late', () => {
+  assert.throws(() => gradeAttempt({
+    questions: [{ id: 'q1' }],
+    answers: [{ answeredAt: new Date('2026-01-01T00:00:01.000Z'), isCorrect: true }],
+    expiresAt: null
+  }), /invalid date/i)
+})
+
+test('computeExpiry — throws on a null startedAt instead of starting at epoch 0', () => {
+  assert.throws(() => computeExpiry(null, 60), /invalid date/i)
 })
 
 // ---- gradeAttempt ----
