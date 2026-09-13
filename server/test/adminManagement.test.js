@@ -324,6 +324,28 @@ test('PATCH /api/admins/:id — punto_de_venta-only on an unknown id maps to 404
   }
 })
 
+// Same dead-guard class as the branch above, on the RPC side: if the RPC ever
+// resolves with no row and no error, `updated` stays falsy and `updated.id`
+// throws a raw 500 ("Cannot read properties of null") instead of a clean 404.
+for (const [label, data] of [['null', null], ['an empty array', []]]) {
+  test(`PATCH /api/admins/:id — the RPC resolving ${label} maps to 404, not 500`, async () => {
+    const restore = mockSupabaseSequence([
+      { table: 'admins', result: { data: SUPER, error: null } }, // requireAuth
+      { rpc: 'update_admin_role_status', result: { data, error: null } }
+    ])
+    try {
+      const res = await request(app)
+        .patch('/api/admins/does-not-exist')
+        .set('Authorization', `Bearer ${superToken()}`)
+        .send({ role: 'admin' })
+      assert.equal(res.status, 404)
+      assert.equal(res.body.error, 'Admin not found')
+    } finally {
+      restore()
+    }
+  })
+}
+
 // The 404 mapping must stay narrow: a genuine write failure is still a 500, not
 // a misleading "Admin not found".
 test('PATCH /api/admins/:id — a real write error is NOT masked as 404', async () => {

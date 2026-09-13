@@ -137,6 +137,13 @@ adminsRouter.patch('/:id', ...superadminOnly, async (req, res, next) => {
     // only the safe fields.
     updated = Array.isArray(data) ? data[0] : data
 
+    // The function RAISEs 'admin_not_found' rather than returning nothing, so
+    // this should be unreachable — but if the RPC ever resolves `{ data: null }`
+    // or `{ data: [] }`, `updated.id` below throws and the caller gets a raw 500
+    // carrying an internal message. An absent row is a 404 here, exactly like
+    // the raised 'admin_not_found' above.
+    if (!updated) return next(httpError(404, 'Admin not found'))
+
   // punto_de_venta ALONE is a plain column update: it carries none of the
   // last-active-superadmin invariant the RPC exists to serialize. Combined with
   // role/is_active it is NOT reachable here — the RPC above already applied it
