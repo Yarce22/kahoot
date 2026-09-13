@@ -111,3 +111,23 @@ test('requireUserAuth — attaches req.user for an active usuario with a valid u
   assert.equal(nextErr, undefined)
   assert.deepEqual(req.user, { id: 'user-1', email: 'u@example.com', fullName: 'Uno', puntoDeVenta: 'Cerritos' })
 })
+
+// verifyToken throws a TypeError on a broken `audience` option — a programming
+// or configuration error, deliberately loud. A blanket `catch { 401 }` mapped it
+// to the same answer a bad token gets, so the loudness never reached anyone: an
+// audience check silently degraded into no check at all would look exactly like
+// ordinary traffic. Verification errors still 401; a TypeError must not.
+test('requireUserAuth — a TypeError from verifyToken is not swallowed as a 401', async () => {
+  const original = jwt.verify
+  jwt.verify = () => { throw new TypeError('verifyToken: options.audience must be a non-empty string when provided') }
+  let err = 'not-called'
+  try {
+    await assert.rejects(
+      () => requireUserAuth(makeReq('any-token'), {}, (e) => { err = e }),
+      TypeError
+    )
+  } finally {
+    jwt.verify = original
+  }
+  assert.equal(err, 'not-called', 'next() must not have been called with a 401')
+})

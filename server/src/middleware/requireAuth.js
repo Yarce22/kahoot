@@ -19,7 +19,14 @@ export async function requireAuth(req, res, next) {
     // namespace must tolerate a pre-deploy token with NO aud claim for one
     // release. The audience is instead checked manually below.
     payload = verifyToken(token)
-  } catch {
+  } catch (err) {
+    // A TypeError is not a bad token — it is verifyToken refusing a broken
+    // `audience` option, i.e. a programming/config error. Mapping it to the
+    // ordinary 401 is what made that deliberate loud failure indistinguishable
+    // from normal traffic: an audience check degraded into no check at all
+    // would just look like every request failing to authenticate. Rethrow so it
+    // surfaces as a 500 instead of hiding among the rejections.
+    if (err instanceof TypeError) throw err
     return next(httpError(401, 'Invalid or expired token'))
   }
 

@@ -87,6 +87,31 @@ test('jwtHostAuthMiddleware — a legacy no-aud token is still accepted (same on
   assert.equal(socket.isHost, true)
 })
 
+// verifyToken throws a TypeError on a broken `audience` option — a programming
+// or configuration error, deliberately loud. A blanket `catch { UNAUTHORIZED }`
+// made it indistinguishable from an ordinary bad token, so an audience check
+// silently degraded into no check at all would look like normal traffic.
+//
+// This middleware cannot simply rethrow the way the HTTP ones do: io.use calls
+// it WITHOUT awaiting, so a rejected promise would be an unhandled rejection.
+// It reports a distinct error instead — and still refuses host status.
+test('jwtHostAuthMiddleware — a TypeError from verifyToken is not swallowed as a plain UNAUTHORIZED', async () => {
+  const original = jwt.verify
+  jwt.verify = () => { throw new TypeError('verifyToken: options.audience must be a non-empty string when provided') }
+  const socket = { handshake: { auth: { token: 'any-token' } } }
+  let err
+  try {
+    await jwtHostAuthMiddleware(socket, (e) => { err = e })
+  } finally {
+    jwt.verify = original
+  }
+  assert.notEqual(err.message, 'UNAUTHORIZED')
+  assert.equal(err.message, 'AUTH_MISCONFIGURED')
+  // Still fails closed: a misconfiguration never grants host status.
+  assert.equal(socket.isHost, undefined)
+  assert.equal(socket.admin, undefined)
+})
+
 test('socket handshake — invalid JWT is rejected at connection', async () => {
   const port = await listen()
   const client = ioClient(`http://localhost:${port}`, {

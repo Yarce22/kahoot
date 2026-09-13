@@ -40,7 +40,18 @@ export async function jwtHostAuthMiddleware(socket, next) {
   let payload
   try {
     payload = verifyToken(token)
-  } catch {
+  } catch (err) {
+    // A TypeError is not a bad token — it is verifyToken refusing a broken
+    // `audience` option, i.e. a programming/config error. Reporting it as the
+    // ordinary UNAUTHORIZED made that deliberate loud failure indistinguishable
+    // from normal traffic. Unlike the HTTP middlewares this one cannot rethrow:
+    // sockets/index.js calls it WITHOUT awaiting, so a rejected promise would be
+    // an unhandled rejection. It logs and reports a distinct error instead —
+    // still failing closed, since a misconfiguration must never grant host.
+    if (err instanceof TypeError) {
+      console.error('jwtHostAuthMiddleware: verifyToken is misconfigured —', err)
+      return next(new Error('AUTH_MISCONFIGURED'))
+    }
     return next(new Error('UNAUTHORIZED'))
   }
 

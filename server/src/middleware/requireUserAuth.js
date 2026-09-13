@@ -21,7 +21,14 @@ export async function requireUserAuth(req, res, next) {
     // which is exactly the required rule — a pre-deploy admin token (or any
     // admin-audience token) can never satisfy this namespace.
     payload = verifyToken(token, { audience: 'usuario' })
-  } catch {
+  } catch (err) {
+    // A TypeError is not a bad token — it is verifyToken refusing a broken
+    // `audience` option, i.e. a programming/config error. Mapping it to the
+    // ordinary 401 is what made that deliberate loud failure indistinguishable
+    // from normal traffic: an audience check degraded into no check at all
+    // would just look like every request failing to authenticate. Rethrow so it
+    // surfaces as a 500 instead of hiding among the rejections.
+    if (err instanceof TypeError) throw err
     return next(httpError(401, 'Invalid or expired token'))
   }
 
