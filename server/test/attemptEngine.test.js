@@ -174,6 +174,26 @@ test('computeExpiry — throws on a non-finite time budget', () => {
   assert.throws(() => computeExpiry(new Date('2026-01-01T00:00:00.000Z'), NaN), /time budget/i)
 })
 
+// startedAt is the OTHER half of the window and was never validated: an
+// unparseable or missing value produced an Invalid Date expiry, which then made
+// every isAnswerLate comparison against it throw (or, worse, silently pass)
+// far away from the call that actually caused it.
+test('computeExpiry — throws on an undefined startedAt instead of an Invalid Date', () => {
+  assert.throws(() => computeExpiry(undefined, 60), /invalid date/i)
+})
+
+test('computeExpiry — throws on an unparseable startedAt', () => {
+  assert.throws(() => computeExpiry('not-a-date', 60), /invalid date/i)
+})
+
+test('computeExpiry — throws on an Invalid Date startedAt', () => {
+  assert.throws(() => computeExpiry(new Date(NaN), 60), /invalid date/i)
+})
+
+test('computeExpiry — still names the offending argument', () => {
+  assert.throws(() => computeExpiry('not-a-date', 60), /startedAt/)
+})
+
 // ---- isAnswerLate ----
 
 test('isAnswerLate — true when answeredAt is after expiresAt', () => {

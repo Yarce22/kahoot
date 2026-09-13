@@ -67,6 +67,20 @@ export function gradeAnswer(question, options, submission = {}) {
   return { isCorrect: false, selectedOptionId: null, answerText: answerText ?? null }
 }
 
+// toValidDate — the shared date-coercion guard for this module. An unparseable
+// date THROWS: every comparison against NaN is false, so the old behaviour
+// silently answered "not late" and turned a corrupt/missing expires_at into a
+// disabled cutoff — fail-open on exactly the check isAnswerLate exists to
+// perform — while computeExpiry turned a missing started_at into an Invalid
+// Date expiry that only blew up later, far from its cause.
+function toValidDate(value, label) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`invalid date for ${label} (${value})`)
+  }
+  return date
+}
+
 // computeExpiry — started_at + time_budget_seconds, snapshotted at start so
 // a mid-attempt quiz edit can neither shorten nor extend an in-flight
 // attempt (spec: Async attempt bound by total_time_seconds).
@@ -75,30 +89,21 @@ export function gradeAnswer(question, options, submission = {}) {
 // degenerate window: quizzes.total_time_seconds is nullable by design (NULL =
 // not assignable async), and passing that through yielded expires_at ===
 // started_at (every answer instantly late) or an Invalid Date.
+//
+// startedAt goes through the same guard, for the same reason: validating only
+// the budget still let computeExpiry(undefined, 60) return an Invalid Date.
 export function computeExpiry(startedAt, timeBudgetSeconds) {
   if (!Number.isFinite(timeBudgetSeconds) || timeBudgetSeconds <= 0) {
     throw new Error(`computeExpiry: time budget must be a positive finite number of seconds, got ${timeBudgetSeconds}`)
   }
-  return new Date(new Date(startedAt).getTime() + timeBudgetSeconds * 1000)
+  const start = toValidDate(startedAt, 'computeExpiry startedAt')
+  return new Date(start.getTime() + timeBudgetSeconds * 1000)
 }
 
 // isAnswerLate — server-side truth for the countdown; the client's own timer
 // is UX only and must never be trusted to enforce the cutoff.
-//
-// An unparseable date THROWS: every comparison against NaN is false, so the
-// old behaviour silently answered "not late" and turned a corrupt/missing
-// expires_at into a disabled cutoff — fail-open on exactly the check this
-// function exists to perform.
-function toValidDate(value, label) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    throw new Error(`isAnswerLate: invalid date for ${label} (${value})`)
-  }
-  return date
-}
-
 export function isAnswerLate(answeredAt, expiresAt) {
-  return toValidDate(answeredAt, 'answeredAt') > toValidDate(expiresAt, 'expiresAt')
+  return toValidDate(answeredAt, 'isAnswerLate answeredAt') > toValidDate(expiresAt, 'isAnswerLate expiresAt')
 }
 
 // gradeAttempt — aggregate. Late answers (answeredAt > expiresAt) are
