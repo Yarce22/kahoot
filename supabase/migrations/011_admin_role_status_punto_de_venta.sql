@@ -59,3 +59,11 @@ BEGIN
   RETURN result;
 END;
 $$;
+
+-- PostgREST caches the schema, including function signatures. Hosted Supabase
+-- reloads it automatically via its DDL event trigger, but a self-hosted or CI
+-- instance keeps advertising the dropped 3-argument signature until it is
+-- reloaded — so every 4-argument RPC call from the API fails with PGRST202
+-- indefinitely. Ask for the reload explicitly; it is a no-op where the trigger
+-- already did it.
+NOTIFY pgrst, 'reload schema';
