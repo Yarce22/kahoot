@@ -94,9 +94,17 @@ test('jwtHostAuthMiddleware — a legacy no-aud token is still accepted (same on
 //
 // This middleware cannot simply rethrow the way the HTTP ones do: io.use calls
 // it WITHOUT awaiting, so a rejected promise would be an unhandled rejection.
-// It reports a distinct error instead — and still refuses host status.
-test('jwtHostAuthMiddleware — a TypeError from verifyToken is not swallowed as a plain UNAUTHORIZED', async () => {
+// It logs instead — and still refuses host status.
+//
+// The distinct signal belongs in the SERVER LOG, not in the handshake reply:
+// socket.io serializes err.message into the connect_error payload, so an
+// 'AUTH_MISCONFIGURED' message told the still-unauthenticated client that the
+// auth layer is broken. Loud to operators, silent to attackers.
+test('jwtHostAuthMiddleware — a TypeError from verifyToken is logged, not disclosed to the client', async () => {
   const original = jwt.verify
+  const originalConsoleError = console.error
+  const logged = []
+  console.error = (...args) => { logged.push(args) }
   jwt.verify = () => { throw new TypeError('verifyToken: options.audience must be a non-empty string when provided') }
   const socket = { handshake: { auth: { token: 'any-token' } } }
   let err
@@ -104,9 +112,14 @@ test('jwtHostAuthMiddleware — a TypeError from verifyToken is not swallowed as
     await jwtHostAuthMiddleware(socket, (e) => { err = e })
   } finally {
     jwt.verify = original
+    console.error = originalConsoleError
   }
-  assert.notEqual(err.message, 'UNAUTHORIZED')
-  assert.equal(err.message, 'AUTH_MISCONFIGURED')
+  // Client-visible payload: the ordinary generic refusal, nothing more.
+  assert.equal(err.message, 'UNAUTHORIZED')
+  // Server-side: the misconfiguration is still reported loudly.
+  assert.equal(logged.length, 1)
+  assert.ok(logged[0].join(' ').includes('misconfigured'))
+  assert.ok(logged[0].some((a) => a instanceof TypeError))
   // Still fails closed: a misconfiguration never grants host status.
   assert.equal(socket.isHost, undefined)
   assert.equal(socket.admin, undefined)

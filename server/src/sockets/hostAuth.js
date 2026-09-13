@@ -46,8 +46,14 @@ export async function jwtHostAuthMiddleware(socket, next) {
     // ordinary UNAUTHORIZED made that deliberate loud failure indistinguishable
     // from normal traffic. Unlike the HTTP middlewares this one cannot rethrow:
     // sockets/index.js calls it WITHOUT awaiting, so a rejected promise would be
-    // an unhandled rejection. It logs and reports a distinct error instead —
-    // still failing closed, since a misconfiguration must never grant host.
+    // an unhandled rejection. It logs instead — still failing closed, since a
+    // misconfiguration must never grant host.
+    //
+    // The distinct signal belongs in the SERVER LOG only: socket.io serializes
+    // err.message into the connect_error payload, so reporting
+    // 'AUTH_MISCONFIGURED' disclosed to a still-unauthenticated client that the
+    // auth layer is broken. Loud to operators, silent to attackers — the client
+    // gets the same generic UNAUTHORIZED every other refusal here uses.
     //
     // Reach, honestly: NO current call site can trigger this. verifyToken only
     // throws that TypeError for a present-but-invalid `options.audience`, and
@@ -56,8 +62,8 @@ export async function jwtHostAuthMiddleware(socket, next) {
     // TODO below, which switches to { audience: 'admin' }) — not a guard
     // against a live bug.
     if (err instanceof TypeError) {
-      console.error('jwtHostAuthMiddleware: verifyToken is misconfigured —', err)
-      return next(new Error('AUTH_MISCONFIGURED'))
+      console.error('jwtHostAuthMiddleware: verifyToken is misconfigured (AUTH_MISCONFIGURED) —', err)
+      return next(new Error('UNAUTHORIZED'))
     }
     return next(new Error('UNAUTHORIZED'))
   }
