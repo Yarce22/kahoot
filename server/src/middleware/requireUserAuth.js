@@ -28,6 +28,12 @@ export async function requireUserAuth(req, res, next) {
     // from normal traffic: an audience check degraded into no check at all
     // would just look like every request failing to authenticate. Rethrow so it
     // surfaces as a 500 instead of hiding among the rejections.
+    //
+    // Reach, honestly: NO current call site can trigger this. verifyToken only
+    // throws that TypeError for a present-but-invalid `options.audience`, and
+    // the audience passed above is a hardcoded valid string literal. It is
+    // defense-in-depth for a future caller that passes a dynamic or
+    // config-derived audience — not a guard against a live bug.
     if (err instanceof TypeError) throw err
     return next(httpError(401, 'Invalid or expired token'))
   }

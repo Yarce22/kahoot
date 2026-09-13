@@ -48,6 +48,13 @@ export async function jwtHostAuthMiddleware(socket, next) {
     // sockets/index.js calls it WITHOUT awaiting, so a rejected promise would be
     // an unhandled rejection. It logs and reports a distinct error instead —
     // still failing closed, since a misconfiguration must never grant host.
+    //
+    // Reach, honestly: NO current call site can trigger this. verifyToken only
+    // throws that TypeError for a present-but-invalid `options.audience`, and
+    // this one calls it with no options at all. It is defense-in-depth for a
+    // future caller that passes a dynamic or config-derived audience (e.g. the
+    // TODO below, which switches to { audience: 'admin' }) — not a guard
+    // against a live bug.
     if (err instanceof TypeError) {
       console.error('jwtHostAuthMiddleware: verifyToken is misconfigured —', err)
       return next(new Error('AUTH_MISCONFIGURED'))
