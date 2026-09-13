@@ -1,13 +1,22 @@
 import { httpError } from '../lib/httpError.js'
-import { PUNTOS_DE_VENTA } from '../lib/puntosDeVenta.js'
 
 // hasStoreScope — the single fail-closed predicate every helper below shares.
-// An allowlist check rather than a null check: the realistic unbackfilled
-// shape is an ABSENT key (undefined), not an explicit null, and treating
-// either as "no filter" hands a non-superadmin unrestricted cross-store
-// access.
+// A PRESENCE check: the threat this module exists to stop is an admin with NO
+// usable scope (the realistic unbackfilled shape is an ABSENT key, not an
+// explicit null), because treating that as "no filter" hands a non-superadmin
+// unrestricted cross-store access. null, undefined, '', whitespace and any
+// non-string all fail closed.
+//
+// Deliberately NOT an allowlist check against PUNTOS_DE_VENTA. That list is
+// duplicated across this server constant, the DB CHECK constraint (migrations
+// 009/010) and the client mirror, with no drift check between them — gating
+// AUTHORIZATION on the JS copy means adding a store to the database without
+// redeploying this file locks every admin at that store out of every
+// store-scoped route. The allowlist stays where it is enforceable and
+// recoverable: validating WRITES in the admin creation/update routes.
 function hasStoreScope(admin) {
-  return PUNTOS_DE_VENTA.includes(admin?.punto_de_venta)
+  const store = admin?.punto_de_venta
+  return typeof store === 'string' && store.trim().length > 0
 }
 
 // requireStoreScope.js — store-scoping helper module (design D4). Ownership

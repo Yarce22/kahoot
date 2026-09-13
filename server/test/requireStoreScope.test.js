@@ -37,11 +37,41 @@ test('requireStoreScope — 403 when a non-superadmin admin has punto_de_venta u
   assert.equal(err.status, 403)
 })
 
-test('requireStoreScope — 403 when a non-superadmin admin has a store outside the allowlist', () => {
+// Authorization here is a PRESENCE check, deliberately not an allowlist one.
+// PUNTOS_DE_VENTA lives in three places (this constant, the DB CHECK constraint
+// of migrations 009/010, and the client mirror) with no drift check between
+// them: gating authorization on the JS copy means adding a store to the DB
+// without redeploying the server locks every admin at that store out of every
+// store-scoped route. The allowlist stays where it belongs — validating WRITES
+// in the admin creation/update routes.
+test('requireStoreScope — a store outside the JS allowlist still passes the auth gate', () => {
   const req = { admin: { id: 'a1', role: 'admin', punto_de_venta: 'Narnia' } }
+  let called = 'not-called'
+  requireStoreScope(req, {}, (e) => { called = e })
+  assert.equal(called, undefined)
+})
+
+test('requireStoreScope — 403 when a non-superadmin admin has an empty punto_de_venta', () => {
+  const req = { admin: { id: 'a1', role: 'admin', punto_de_venta: '' } }
   let err
   requireStoreScope(req, {}, (e) => { err = e })
   assert.equal(err.status, 403)
+})
+
+test('requireStoreScope — 403 when a non-superadmin admin has a whitespace-only punto_de_venta', () => {
+  const req = { admin: { id: 'a1', role: 'admin', punto_de_venta: '   ' } }
+  let err
+  requireStoreScope(req, {}, (e) => { err = e })
+  assert.equal(err.status, 403)
+})
+
+test('requireStoreScope — 403 when punto_de_venta is not a string at all', () => {
+  for (const value of [42, {}, [], true]) {
+    const req = { admin: { id: 'a1', role: 'admin', punto_de_venta: value } }
+    let err
+    requireStoreScope(req, {}, (e) => { err = e })
+    assert.equal(err?.status, 403, `expected 403 for ${JSON.stringify(value)}`)
+  }
 })
 
 test('requireStoreScope — passes through for a non-superadmin with a real store', () => {
@@ -95,6 +125,18 @@ test('resolveStoreFilter — non-superadmin with punto_de_venta null throws 403'
   assert.throws(() => resolveStoreFilter(req, undefined), (err) => err.status === 403)
 })
 
+test('resolveStoreFilter — non-superadmin with an empty punto_de_venta throws 403', () => {
+  const req = { admin: { role: 'admin', punto_de_venta: '' } }
+  assert.throws(() => resolveStoreFilter(req, undefined), (err) => err.status === 403)
+})
+
+// Same reasoning as the middleware: an unknown-to-this-deploy store is still a
+// real scope, so it scopes the read rather than denying it outright.
+test('resolveStoreFilter — a store outside the JS allowlist still scopes the read', () => {
+  const req = { admin: { role: 'admin', punto_de_venta: 'Narnia' } }
+  assert.equal(resolveStoreFilter(req, undefined), 'Narnia')
+})
+
 // ---- applyStoreFilter ----
 
 test('applyStoreFilter — filters the query by column when effectiveStore is set', () => {
@@ -140,4 +182,14 @@ test('assertSameStore — a non-superadmin with punto_de_venta undefined throws 
 test('assertSameStore — a non-superadmin with punto_de_venta null throws 403 even for a null target', () => {
   const req = { admin: { role: 'admin', punto_de_venta: null } }
   assert.throws(() => assertSameStore(req, null), (err) => err.status === 403)
+})
+
+test('assertSameStore — a non-superadmin with an empty punto_de_venta throws 403 even for an empty target', () => {
+  const req = { admin: { role: 'admin', punto_de_venta: '' } }
+  assert.throws(() => assertSameStore(req, ''), (err) => err.status === 403)
+})
+
+test('assertSameStore — a store outside the JS allowlist can still write to its own store', () => {
+  const req = { admin: { role: 'admin', punto_de_venta: 'Narnia' } }
+  assert.doesNotThrow(() => assertSameStore(req, 'Narnia'))
 })
