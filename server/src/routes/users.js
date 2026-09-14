@@ -23,20 +23,31 @@ const PUNTO_DE_VENTA_ERROR = `punto_de_venta must be one of: ${PUNTOS_DE_VENTA.j
 usersRouter.use(requireJwtMode, requireAuth, requireStoreScope)
 
 // buildSearchFilter — renders `q` into a PostgREST `or` expression matching
-// either name or email. Two layers of neutralization, because the value lands
-// inside a filter STRING, not a bound parameter:
-//   1. `%` and `_` are LIKE metacharacters and PostgREST exposes no ESCAPE
-//      clause, so a bare `%` would turn the search into "match everything".
-//      They are dropped rather than escaped.
+// either name or email. Two layers of neutralization, applied IN ORDER, because
+// the value lands inside a filter STRING, not a bound parameter:
+//   1. `%` and `_` are LIKE metacharacters, and PostgREST additionally treats
+//      `*` as an alias for `%` inside a like/ilike pattern — so a bare `%` or a
+//      bare `*` turns the search into "match everything". They are ESCAPED with
+//      `\` (Postgres LIKE's DEFAULT escape character, so no ESCAPE clause is
+//      needed and PostgREST not exposing one does not matter), never deleted:
+//      deleting `_` silently broke a legitimate search for `john_doe`. `\`
+//      itself is escaped here too, so a user-typed backslash cannot smuggle in
+//      an escape sequence of its own. Postgres matches `\<char>` literally for
+//      ANY char, so this is safe for `*` as well; the only illegal form is a
+//      pattern ENDING in the escape character, which cannot happen because the
+//      term is always followed by the trailing `%`.
 //   2. `,` separates the two branches of `or` and `"` terminates a quoted
 //      value, so the term is wrapped in quotes with `\` and `"` escaped —
 //      otherwise the search box could rewrite the filter expression itself.
+//      This doubles the backslashes introduced by step 1; PostgREST collapses
+//      them back to one before Postgres ever sees the pattern.
 // Returns null when nothing searchable survives, so no filter is applied.
 function buildSearchFilter(q) {
   if (typeof q !== 'string') return null
-  const term = q.replace(/[%_]/g, '').trim()
+  const term = q.trim()
   if (term.length === 0) return null
-  const escaped = term.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  const wildcardSafe = term.replace(/[\\%_*]/g, (c) => `\\${c}`)
+  const escaped = wildcardSafe.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
   return `full_name.ilike."%${escaped}%",email.ilike."%${escaped}%"`
 }
 

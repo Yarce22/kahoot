@@ -140,27 +140,59 @@ test('GET /api/users — q escapes the characters that delimit PostgREST or() sy
   }
 })
 
-// % and _ are LIKE metacharacters and PostgREST exposes no ESCAPE clause, so
-// a bare '%' would turn the search into "match everything".
-test('GET /api/users — q strips LIKE wildcard metacharacters', async () => {
+// %, _ and * are all "match anything" metacharacters once the value reaches
+// PostgREST (`*` is PostgREST's own alias for `%` in a like/ilike pattern), so
+// a bare one of them would turn the search into "match everything". They are
+// ESCAPED, not deleted: `\` is Postgres LIKE's default escape character, and a
+// deleted `_` silently broke a legitimate search for `john_doe`. The doubled
+// backslash is the PostgREST quoted-value layer — it collapses back to a single
+// `\` before Postgres sees the pattern.
+test('GET /api/users — q escapes LIKE wildcard metacharacters instead of deleting them', async () => {
+  const cases = [
+    ['a%b_c', 'a\\\\%b\\\\_c'],
+    ['*', '\\\\*'],
+    ['john_doe', 'john\\\\_doe'],
+    ['100%', '100\\\\%']
+  ]
+  for (const [q, expected] of cases) {
+    const restore = mockSupabaseSequence([
+      { table: 'admins', result: { data: SUPER, error: null } },
+      { table: 'users', result: { data: [], error: null, count: 0 } }
+    ])
+    try {
+      const res = await request(buildApp())
+        .get(`/api/users?q=${encodeURIComponent(q)}`)
+        .set('Authorization', `Bearer ${superToken()}`)
+      assert.equal(res.status, 200, q)
+      const orCall = restore.calls.find((c) => c.table === 'users' && c.method === 'or')
+      assert.deepEqual(orCall.args, [`full_name.ilike."%${expected}%",email.ilike."%${expected}%"`], q)
+    } finally {
+      restore()
+    }
+  }
+})
+
+// A wildcard-only term is a LITERAL search now, not an empty one: `%%` looks
+// for the two-character string "%%", so a filter must still be applied.
+test('GET /api/users — a wildcard-only q searches for it literally rather than matching everything', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: SUPER, error: null } },
     { table: 'users', result: { data: [], error: null, count: 0 } }
   ])
   try {
     const res = await request(buildApp())
-      .get(`/api/users?q=${encodeURIComponent('a%b_c')}`)
+      .get(`/api/users?q=${encodeURIComponent('%%')}`)
       .set('Authorization', `Bearer ${superToken()}`)
     assert.equal(res.status, 200)
     const orCall = restore.calls.find((c) => c.table === 'users' && c.method === 'or')
-    assert.deepEqual(orCall.args, ['full_name.ilike."%abc%",email.ilike."%abc%"'])
+    assert.deepEqual(orCall.args, ['full_name.ilike."%\\\\%\\\\%%",email.ilike."%\\\\%\\\\%%"'])
   } finally {
     restore()
   }
 })
 
 test('GET /api/users — a blank q applies no search filter at all', async () => {
-  for (const q of ['', '   ', '%%']) {
+  for (const q of ['', '   ']) {
     const restore = mockSupabaseSequence([
       { table: 'admins', result: { data: SUPER, error: null } },
       { table: 'users', result: { data: [], error: null, count: 0 } }
