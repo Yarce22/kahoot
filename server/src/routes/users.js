@@ -71,10 +71,15 @@ usersRouter.post('/', async (req, res, next) => {
   const { email, password, full_name, punto_de_venta } = req.body ?? {}
 
   if (!email || !EMAIL_RE.test(email)) return next(httpError(400, 'A valid email is required'))
-  if (!password || password.length < MIN_PASSWORD_LENGTH) {
+  // `typeof` first, deliberately: a non-string has no usable `.length`, so a
+  // NUMBER password sailed past `undefined < 8` (false) and only blew up later
+  // inside bcrypt.hash, which refuses non-string input.
+  if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) {
     return next(httpError(400, `Password must be at least ${MIN_PASSWORD_LENGTH} characters`))
   }
-  if (!full_name) return next(httpError(400, 'full_name is required'))
+  if (typeof full_name !== 'string' || full_name.trim().length === 0) {
+    return next(httpError(400, 'full_name is required'))
+  }
 
   const targetStore = punto_de_venta ?? req.admin.punto_de_venta
   if (!PUNTOS_DE_VENTA.includes(targetStore)) return next(httpError(400, PUNTO_DE_VENTA_ERROR))
@@ -124,6 +129,16 @@ usersRouter.patch('/:id', async (req, res, next) => {
   if (punto_de_venta !== undefined && !PUNTOS_DE_VENTA.includes(punto_de_venta)) {
     return next(httpError(400, PUNTO_DE_VENTA_ERROR))
   }
+  // Same typing contract as POST, checked up front with the other body
+  // validations: `null.length` used to throw a raw TypeError here (a crash,
+  // not a 400) and a NUMBER bypassed the length gate before reaching
+  // bcrypt.hash. full_name was not validated here at all, unlike POST.
+  if (full_name !== undefined && (typeof full_name !== 'string' || full_name.trim().length === 0)) {
+    return next(httpError(400, 'full_name must be a non-empty string'))
+  }
+  if (password !== undefined && (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH)) {
+    return next(httpError(400, `Password must be at least ${MIN_PASSWORD_LENGTH} characters`))
+  }
 
   const { data: target, error: targetError } = await supabase
     .from('users')
@@ -149,12 +164,7 @@ usersRouter.patch('/:id', async (req, res, next) => {
   if (full_name !== undefined) updates.full_name = full_name
   if (is_active !== undefined) updates.is_active = is_active
   if (punto_de_venta !== undefined) updates.punto_de_venta = punto_de_venta
-  if (password !== undefined) {
-    if (password.length < MIN_PASSWORD_LENGTH) {
-      return next(httpError(400, `Password must be at least ${MIN_PASSWORD_LENGTH} characters`))
-    }
-    updates.password_hash = await bcrypt.hash(password, BCRYPT_COST)
-  }
+  if (password !== undefined) updates.password_hash = await bcrypt.hash(password, BCRYPT_COST)
 
   const { data: updated, error } = await supabase
     .from('users')

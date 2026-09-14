@@ -112,6 +112,42 @@ test('POST /api/users — a password shorter than 8 characters returns 400', asy
   }
 })
 
+// A NUMBER has no `.length`, so `undefined < 8` was false and the value sailed
+// past the length gate straight into bcrypt.hash, which throws on a non-string.
+test('POST /api/users — a non-string password returns 400, not a crash', async () => {
+  for (const password of [12345678, true, { p: 'x' }, ['pw123456']]) {
+    const restore = mockSupabaseSequence([
+      { table: 'admins', result: { data: PLAIN_A, error: null } }
+    ])
+    try {
+      const res = await request(buildApp())
+        .post('/api/users')
+        .set('Authorization', `Bearer ${plainAToken()}`)
+        .send({ email: 'n@x.com', password, full_name: 'N', punto_de_venta: 'Cerritos' })
+      assert.equal(res.status, 400, `password=${JSON.stringify(password)}`)
+    } finally {
+      restore()
+    }
+  }
+})
+
+test('POST /api/users — a non-string full_name returns 400', async () => {
+  for (const full_name of [42, true, '   ']) {
+    const restore = mockSupabaseSequence([
+      { table: 'admins', result: { data: PLAIN_A, error: null } }
+    ])
+    try {
+      const res = await request(buildApp())
+        .post('/api/users')
+        .set('Authorization', `Bearer ${plainAToken()}`)
+        .send({ email: 'n@x.com', password: 'pw123456', full_name, punto_de_venta: 'Cerritos' })
+      assert.equal(res.status, 400, `full_name=${JSON.stringify(full_name)}`)
+    } finally {
+      restore()
+    }
+  }
+})
+
 // spec: Non-superadmin creates user outside own store rejected
 test('POST /api/users — a plain admin creating a user in another store gets 403 (assertSameStore)', async () => {
   const restore = mockSupabaseSequence([
@@ -255,6 +291,62 @@ test('PATCH /api/users/:id — a same-store update succeeds', async () => {
       .send({ full_name: 'Renamed' })
     assert.equal(res.status, 200)
     assert.equal(res.body.full_name, 'Renamed')
+  } finally {
+    restore()
+  }
+})
+
+// `null.length` threw a raw TypeError (crash, not 400) and a NUMBER bypassed
+// the length gate entirely before reaching bcrypt.hash.
+test('PATCH /api/users/:id — a non-string password returns 400, not a crash', async () => {
+  for (const password of [null, 12345678, true, { p: 'x' }]) {
+    const restore = mockSupabaseSequence([
+      { table: 'admins', result: { data: PLAIN_A, error: null } }
+    ])
+    try {
+      const res = await request(buildApp())
+        .patch('/api/users/u1')
+        .set('Authorization', `Bearer ${plainAToken()}`)
+        .send({ password })
+      assert.equal(res.status, 400, `password=${JSON.stringify(password)}`)
+    } finally {
+      restore()
+    }
+  }
+})
+
+test('PATCH /api/users/:id — a blank or non-string full_name returns 400', async () => {
+  for (const full_name of [null, '', '   ', 42, true]) {
+    const restore = mockSupabaseSequence([
+      { table: 'admins', result: { data: PLAIN_A, error: null } }
+    ])
+    try {
+      const res = await request(buildApp())
+        .patch('/api/users/u1')
+        .set('Authorization', `Bearer ${plainAToken()}`)
+        .send({ full_name })
+      assert.equal(res.status, 400, `full_name=${JSON.stringify(full_name)}`)
+    } finally {
+      restore()
+    }
+  }
+})
+
+test('PATCH /api/users/:id — a valid password is stored as a bcrypt hash', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } },
+    { table: 'users', result: { data: { id: 'u1', punto_de_venta: 'Cerritos' }, error: null } }, // target lookup
+    { table: 'users', result: { data: { id: 'u1', email: 'u1@x.com', full_name: 'U1', punto_de_venta: 'Cerritos', is_active: true }, error: null } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .patch('/api/users/u1')
+      .set('Authorization', `Bearer ${plainAToken()}`)
+      .send({ password: 'newpw123456' })
+    assert.equal(res.status, 200)
+    const update = restore.calls.find((c) => c.table === 'users' && c.method === 'update')
+    assert.equal(Object.prototype.hasOwnProperty.call(update.args[0], 'password'), false)
+    assert.match(update.args[0].password_hash, /^\$2[aby]\$/)
   } finally {
     restore()
   }
