@@ -291,6 +291,49 @@ test('GET /api/attempts — from/to reach the query normalized, not as the raw q
   }
 })
 
+// A date-only `to` names a calendar DAY, not the instant that day begins.
+// Normalizing `to=2026-01-15` to 2026-01-15T00:00:00.000Z and handing that to
+// .lte() excluded every attempt started ON the 15th — the entire final day the
+// caller explicitly asked to include. `from` keeps opening at midnight, which
+// is already the inclusive edge for a .gte() bound.
+test('GET /api/attempts — a date-only `to` includes the whole final day', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } },
+    { table: 'quiz_attempts', result: { data: [], error: null, count: 0 } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .get('/api/attempts?from=2026-01-01&to=2026-01-15')
+      .set('Authorization', `Bearer ${superToken()}`)
+    assert.equal(res.status, 200)
+    const gte = restore.calls.find((c) => c.table === 'quiz_attempts' && c.method === 'gte')
+    const lte = restore.calls.find((c) => c.table === 'quiz_attempts' && c.method === 'lte')
+    assert.deepEqual(gte.args, ['started_at', '2026-01-01T00:00:00.000Z'])
+    assert.deepEqual(lte.args, ['started_at', '2026-01-15T23:59:59.999Z'])
+  } finally {
+    restore()
+  }
+})
+
+// The end-of-day widening applies ONLY to a bare calendar day. A `to` that
+// already carries a time is an exact instant and must stay untouched.
+test('GET /api/attempts — a `to` that carries a time component is not widened', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } },
+    { table: 'quiz_attempts', result: { data: [], error: null, count: 0 } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .get('/api/attempts?to=2026-01-15T10:30:00.000Z')
+      .set('Authorization', `Bearer ${superToken()}`)
+    assert.equal(res.status, 200)
+    const lte = restore.calls.find((c) => c.table === 'quiz_attempts' && c.method === 'lte')
+    assert.deepEqual(lte.args, ['started_at', '2026-01-15T10:30:00.000Z'])
+  } finally {
+    restore()
+  }
+})
+
 test('GET /api/attempts — from/to are optional and independent', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: SUPER, error: null } },

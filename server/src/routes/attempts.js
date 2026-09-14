@@ -19,6 +19,9 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // Accepts the two shapes the client actually sends: a bare calendar day
 // (YYYY-MM-DD, what an <input type="date"> submits) and a full ISO datetime.
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?)?$/
+// A bare calendar day carries no time, so it needs widening on the `to` side —
+// see the range loop below.
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/
 const INTEGER_RE = /^-?\d+$/
 
 // This namespace has no legacy identity to fall back to — store scoping is
@@ -106,7 +109,15 @@ attemptsRouter.get('/', async (req, res, next) => {
     if (typeof value !== 'string' || !ISO_DATE_RE.test(value) || Number.isNaN(Date.parse(value))) {
       return next(httpError(400, `${key} must be an ISO 8601 date`))
     }
-    range[key] = new Date(value).toISOString()
+    // A date-only `to` names a calendar DAY, and `to` is applied with .lte(),
+    // so it has to land on the LAST instant of that day. Normalizing it to
+    // midnight (as `from` correctly is, that being the inclusive edge of a
+    // .gte() bound) excluded every attempt started on the final day — the one
+    // the caller explicitly asked to include. Only a BARE day is widened: a
+    // value that already carries a time is an exact instant, not a day.
+    range[key] = key === 'to' && DATE_ONLY_RE.test(value)
+      ? new Date(`${value}T23:59:59.999Z`).toISOString()
+      : new Date(value).toISOString()
   }
 
   const { page, pageSize } = parsePagination(req.query)
