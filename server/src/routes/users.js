@@ -70,7 +70,13 @@ usersRouter.get('/', async (req, res, next) => {
 usersRouter.post('/', async (req, res, next) => {
   const { email, password, full_name, punto_de_venta } = req.body ?? {}
 
-  if (!email || !EMAIL_RE.test(email)) return next(httpError(400, 'A valid email is required'))
+  // Normalized before validation AND before insert: the DB's UNIQUE index and
+  // the login lookup (routes/userAuth.js) are both case-sensitive, so storing
+  // `Ana@X.com` creates a row that `ana@x.com` can never log into and that the
+  // UNIQUE constraint will not recognize as a duplicate.
+  if (typeof email !== 'string') return next(httpError(400, 'A valid email is required'))
+  const normalizedEmail = email.trim().toLowerCase()
+  if (!EMAIL_RE.test(normalizedEmail)) return next(httpError(400, 'A valid email is required'))
   // `typeof` first, deliberately: a non-string has no usable `.length`, so a
   // NUMBER password sailed past `undefined < 8` (false) and only blew up later
   // inside bcrypt.hash, which refuses non-string input.
@@ -95,7 +101,7 @@ usersRouter.post('/', async (req, res, next) => {
   const { data: user, error } = await supabase
     .from('users')
     .insert({
-      email,
+      email: normalizedEmail,
       password_hash: passwordHash,
       full_name,
       punto_de_venta: targetStore,

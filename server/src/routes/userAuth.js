@@ -25,12 +25,19 @@ const DUMMY_HASH = '$2b$12$fLW7OVDfaQDuxoDkJ7EWWOiDMJL77XGv/x.iF1N4el6P300rNwPsq
 userAuthRouter.post('/login', async (req, res, next) => {
   const { email, password } = req.body ?? {}
 
-  if (!email || !password) return next(httpError(400, 'email and password are required'))
+  if (typeof email !== 'string' || !email || !password) {
+    return next(httpError(400, 'email and password are required'))
+  }
+
+  // Normalized identically to routes/users.js's create path. The column's
+  // UNIQUE index is case-sensitive, so an un-normalized lookup would fail to
+  // match a stored address the caller typed with different casing.
+  const normalizedEmail = email.trim().toLowerCase()
 
   const { data: user, error } = await supabase
     .from('users')
     .select('id, email, password_hash, full_name, punto_de_venta, is_active')
-    .eq('email', email)
+    .eq('email', normalizedEmail)
     .single()
 
   // Unknown email still runs bcrypt.compare against the dummy hash so the

@@ -88,6 +88,32 @@ test('POST /api/user/login — valid credentials return a usuario-audience token
   }
 })
 
+// The stored email is normalized at creation (routes/users.js), so the lookup
+// must normalize identically — otherwise a user who types their own address
+// with different casing can never log in.
+test('POST /api/user/login — the email lookup is normalized to trimmed lowercase', async () => {
+  process.env.AUTH_MODE = 'jwt'
+  const restore = mockSupabaseSequence([
+    { table: 'users', result: { data: USER, error: null } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .post('/api/user/login')
+      .send({ email: '  U@Example.COM  ', password: PASSWORD })
+    assert.equal(res.status, 200)
+    const eqCall = restore.calls.find((c) => c.table === 'users' && c.method === 'eq')
+    assert.deepEqual(eqCall.args, ['email', 'u@example.com'])
+  } finally {
+    restore()
+  }
+})
+
+test('POST /api/user/login — a non-string email returns 400, not a crash', async () => {
+  process.env.AUTH_MODE = 'jwt'
+  const res = await request(buildApp()).post('/api/user/login').send({ email: 42, password: PASSWORD })
+  assert.equal(res.status, 400)
+})
+
 test('POST /api/user/login — wrong password returns 401', async () => {
   process.env.AUTH_MODE = 'jwt'
   const restore = mockSupabaseSequence([

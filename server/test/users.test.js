@@ -210,6 +210,44 @@ test('POST /api/users — the insert payload carries no plaintext `password` key
   }
 })
 
+// Ana@X.com and ana@x.com are the same account to a human but two distinct
+// rows to a case-sensitive UNIQUE index — and the login lookup is equally
+// case-sensitive, so a mis-cased stored email is permanently unloginable.
+test('POST /api/users — the email is normalized to trimmed lowercase before insert', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } },
+    { table: 'users', result: { data: { id: 'new-1', email: 'ana@x.com', full_name: 'N', punto_de_venta: 'Cerritos', is_active: true }, error: null } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .post('/api/users')
+      .set('Authorization', `Bearer ${plainAToken()}`)
+      .send({ email: '  Ana@X.COM  ', password: 'pw123456', full_name: 'N' })
+    assert.equal(res.status, 201)
+    const insert = restore.calls.find((c) => c.table === 'users' && c.method === 'insert')
+    assert.equal(insert.args[0].email, 'ana@x.com')
+  } finally {
+    restore()
+  }
+})
+
+test('POST /api/users — a non-string email returns 400, not a crash', async () => {
+  for (const email of [42, true, { a: 1 }]) {
+    const restore = mockSupabaseSequence([
+      { table: 'admins', result: { data: PLAIN_A, error: null } }
+    ])
+    try {
+      const res = await request(buildApp())
+        .post('/api/users')
+        .set('Authorization', `Bearer ${plainAToken()}`)
+        .send({ email, password: 'pw123456', full_name: 'N' })
+      assert.equal(res.status, 400, `email=${JSON.stringify(email)}`)
+    } finally {
+      restore()
+    }
+  }
+})
+
 // spec: Superadmin unrestricted
 test('POST /api/users — a superadmin can create a user in any store', async () => {
   const restore = mockSupabaseSequence([
