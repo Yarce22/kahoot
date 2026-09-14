@@ -291,6 +291,63 @@ test('GET /api/attempts — from/to reach the query normalized, not as the raw q
   }
 })
 
+// `new Date('2026-01-15T10:30:00')` — a datetime with NO timezone marker — is
+// parsed as SERVER-LOCAL time by the JS engine, while `new Date('2026-01-15')`
+// right next to it is parsed as UTC. The same wall-clock value therefore
+// normalized to a different instant depending on which shape the client sent
+// and on the TZ the server happens to run under, silently shifting every
+// range boundary. An explicit UTC marker (`Z` or a ±HH:mm offset) is now
+// REQUIRED, so the deployment's timezone can never decide what the caller meant.
+test('GET /api/attempts — a datetime with no timezone offset is rejected 400', async () => {
+  for (const qs of [
+    'from=2026-01-15T10:30:00',
+    'to=2026-01-15T10:30:00',
+    'from=2026-01-15T10:30:00.500',
+    'to=2026-01-15T00:00:00'
+  ]) {
+    const restore = mockSupabaseSequence([
+      { table: 'admins', result: { data: SUPER, error: null } }
+    ])
+    try {
+      const res = await request(buildApp())
+        .get(`/api/attempts?${qs}`)
+        .set('Authorization', `Bearer ${superToken()}`)
+      assert.equal(res.status, 400, qs)
+      assert.equal(restore.calls.some((c) => c.table === 'quiz_attempts'), false, qs)
+    } finally {
+      restore()
+    }
+  }
+})
+
+// The two shapes that DO carry an unambiguous instant stay accepted, and a
+// bare calendar day keeps its UTC reading (that is what `new Date()` does with
+// a date-only string, independently of the server's timezone).
+test('GET /api/attempts — an explicit UTC marker or offset is accepted, and a date-only value is read as UTC', async () => {
+  const cases = [
+    ['from=2026-01-15T10:30:00Z', '2026-01-15T10:30:00.000Z'],
+    [`from=${encodeURIComponent('2026-01-15T10:30:00+02:00')}`, '2026-01-15T08:30:00.000Z'],
+    [`from=${encodeURIComponent('2026-01-15T10:30:00-05:00')}`, '2026-01-15T15:30:00.000Z'],
+    ['from=2026-01-15', '2026-01-15T00:00:00.000Z']
+  ]
+  for (const [qs, expected] of cases) {
+    const restore = mockSupabaseSequence([
+      { table: 'admins', result: { data: SUPER, error: null } },
+      { table: 'quiz_attempts', result: { data: [], error: null, count: 0 } }
+    ])
+    try {
+      const res = await request(buildApp())
+        .get(`/api/attempts?${qs}`)
+        .set('Authorization', `Bearer ${superToken()}`)
+      assert.equal(res.status, 200, qs)
+      const gte = restore.calls.find((c) => c.table === 'quiz_attempts' && c.method === 'gte')
+      assert.deepEqual(gte.args, ['started_at', expected], qs)
+    } finally {
+      restore()
+    }
+  }
+})
+
 // A date-only `to` names a calendar DAY, not the instant that day begins.
 // Normalizing `to=2026-01-15` to 2026-01-15T00:00:00.000Z and handing that to
 // .lte() excluded every attempt started ON the 15th — the entire final day the

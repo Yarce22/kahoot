@@ -18,7 +18,13 @@ const ATTEMPT_STATUSES = ['in_progress', 'completed', 'expired']
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 // Accepts the two shapes the client actually sends: a bare calendar day
 // (YYYY-MM-DD, what an <input type="date"> submits) and a full ISO datetime.
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?)?$/
+// The datetime shape MUST carry an explicit UTC marker (`Z` or ±HH:mm): JS
+// parses an offset-less datetime as SERVER-LOCAL time while parsing the
+// date-only form as UTC, so the same wall clock value normalized to a
+// different instant depending on which shape was sent and on the TZ the
+// process happens to run under. Rejecting it here is the only reading that
+// does not silently depend on the deployment's timezone.
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2}))?$/
 // A bare calendar day carries no time, so it needs widening on the `to` side —
 // see the range loop below.
 const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/
