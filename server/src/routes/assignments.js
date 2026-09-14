@@ -21,6 +21,8 @@ const MAX_PAGE_SIZE = 100
 const ASSIGNMENT_STATUSES = ['pending', 'completed']
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+const isUuid = (value) => typeof value === 'string' && UUID_RE.test(value)
+
 function parsePagination(query) {
   const page = Math.max(1, parseInt(query.page, 10) || DEFAULT_PAGE)
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, parseInt(query.page_size, 10) || DEFAULT_PAGE_SIZE))
@@ -48,6 +50,13 @@ assignmentsRouter.post('/', async (req, res, next) => {
   if (!quiz_id) return next(httpError(400, 'quiz_id is required'))
   if (!Array.isArray(user_ids) || user_ids.length === 0) {
     return next(httpError(400, 'user_ids must be a non-empty array'))
+  }
+  // UUID-shaped, not merely "a non-empty string": user_ids filter a uuid
+  // column, so 'not-a-uuid' reaches Postgres as an uncastable literal (22P02)
+  // and surfaces as an uncontrolled 500 instead of a 400. Same contract the
+  // GET / quiz_id/user_id filters already enforce.
+  if (!user_ids.every(isUuid)) {
+    return next(httpError(400, 'user_ids must be an array of UUIDs'))
   }
 
   const { data: quiz, error: quizError } = await supabase
@@ -266,14 +275,16 @@ assignmentsRouter.post('/reactivate', async (req, res, next) => {
   if (!quiz_id) return next(httpError(400, 'quiz_id is required'))
 
   // user_ids stays OPTIONAL (omitted/null = every assignment on the quiz),
-  // but when supplied it must be a non-empty array of strings — the same
-  // contract POST / enforces. Validated BEFORE the RPC because the RPC bumps
+  // but when supplied it must be a non-empty array of UUIDs — the same
+  // contract POST / enforces, and the RPC's target_user_ids parameter is
+  // uuid[], so a non-UUID string is a 22P02 cast error (an uncontrolled 500),
+  // not a zero-match run. Validated BEFORE the RPC because the RPC bumps
   // quizzes.assignment_cycle unconditionally, before it matches any row: a
   // request that could never match anything would still advance the cycle.
   const hasUserIds = user_ids !== undefined && user_ids !== null
   if (hasUserIds) {
-    const isValid = Array.isArray(user_ids) && user_ids.length > 0 && user_ids.every((id) => typeof id === 'string')
-    if (!isValid) return next(httpError(400, 'user_ids must be a non-empty array of strings'))
+    const isValid = Array.isArray(user_ids) && user_ids.length > 0 && user_ids.every(isUuid)
+    if (!isValid) return next(httpError(400, 'user_ids must be a non-empty array of UUIDs'))
   }
 
   const { data: quiz, error: quizError } = await supabase

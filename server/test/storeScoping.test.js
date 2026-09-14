@@ -53,13 +53,13 @@ test('store scoping — a non-superadmin cannot assign a quiz to a user in anoth
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: ADMIN_A, error: null } },
     { table: 'quizzes', result: { data: { owner_id: ADMIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
-    { table: 'users', result: { data: [{ id: 'user-b1', punto_de_venta: STORE_B }], error: null } }
+    { table: 'users', result: { data: [{ id: 'b1111111-1111-4111-8111-111111111111', punto_de_venta: STORE_B }], error: null } }
   ])
   try {
     const res = await request(buildApp())
       .post('/api/assignments')
       .set('Authorization', `Bearer ${adminAToken()}`)
-      .send({ quiz_id: QUIZ_ID, user_ids: ['user-b1'] })
+      .send({ quiz_id: QUIZ_ID, user_ids: ['b1111111-1111-4111-8111-111111111111'] })
 
     assert.equal(res.status, 403)
     assert.equal(res.body.error, 'CROSS_STORE_ASSIGNMENT_FORBIDDEN')
