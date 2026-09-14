@@ -45,6 +45,11 @@ function makeQueryBuilder(result, calls = [], table) {
     order: () => builder,
     limit: () => builder,
     insert: record('insert'),
+    // `upsert` is recorded with ALL its arguments, options bag included: the
+    // `{ onConflict, ignoreDuplicates }` pair is the only observable proof that
+    // a batch write is ONE conflict-tolerant statement rather than a loop of
+    // inserts, which is what makes it atomic.
+    upsert: record('upsert'),
     update: record('update'),
     delete: () => builder,
     single: () => resolved,
@@ -66,7 +71,8 @@ function makeQueryBuilder(result, calls = [], table) {
  * select — the total matching row count, independent of the page returned.
  *
  * The returned restore function additionally carries a `.calls` array
- * recording every `select`/`insert`/`update`/`eq`/`in`/`or`/`gte`/`lte`/`range`
+ * recording every
+ * `select`/`insert`/`upsert`/`update`/`eq`/`in`/`or`/`gte`/`lte`/`range`
  * made across the whole sequence
  * (plus every `rpc`, as `{ table: fnName, method: 'rpc', args: [params] }`)
  * as `{ table, method, args }` — so a test can assert the payload that was

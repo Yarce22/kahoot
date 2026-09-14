@@ -193,10 +193,9 @@ test('POST /api/assignments — a real cross-store id and a nonexistent id are i
   assert.deepEqual(responses[0], responses[1])
 })
 
-// The store guard inspected the users the DB RETURNED, but the insert loop
+// The store guard inspected the users the DB RETURNED, but the write loop
 // iterated the RAW request body. An id absent from the lookup was therefore
-// never store-checked, yet still got an insert attempt — and because the
-// inserts are per-row, the ones before the failure stayed committed.
+// never store-checked, yet still got a write attempt.
 test('POST /api/assignments — an id that matches no user is rejected 404, nothing inserted', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
@@ -209,7 +208,7 @@ test('POST /api/assignments — an id that matches no user is rejected 404, noth
       .set('Authorization', `Bearer ${plainAToken()}`)
       .send({ quiz_id: QUIZ_ID, user_ids: [U_GHOST] })
     assert.equal(res.status, 404)
-    assert.equal(restore.calls.some((c) => c.table === 'quiz_assignments' && c.method === 'insert'), false)
+    assert.equal(restore.calls.some((c) => c.table === 'quiz_assignments'), false)
   } finally {
     restore()
   }
@@ -227,20 +226,20 @@ test('POST /api/assignments — a real id mixed with an unknown id inserts NOTHI
       .set('Authorization', `Bearer ${plainAToken()}`)
       .send({ quiz_id: QUIZ_ID, user_ids: [U1, U_GHOST] })
     assert.equal(res.status, 404)
-    assert.equal(restore.calls.some((c) => c.table === 'quiz_assignments' && c.method === 'insert'), false)
+    assert.equal(restore.calls.some((c) => c.table === 'quiz_assignments'), false)
   } finally {
     restore()
   }
 })
 
-// Duplicates collapse to one verified row: the loop now walks the DB result,
-// not the request body, so the same id twice cannot produce two inserts.
-test('POST /api/assignments — a duplicated user_id produces exactly one insert', async () => {
+// Duplicates collapse to one verified row: the payload is built from the DB
+// result, not the request body, so the same id twice cannot produce two rows.
+test('POST /api/assignments — a duplicated user_id produces exactly one row', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
     { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
     { table: 'users', result: { data: [{ id: U1, punto_de_venta: 'Cerritos' }], error: null } },
-    { table: 'quiz_assignments', result: { data: { id: 'assign-1', user_id: U1 }, error: null } }
+    { table: 'quiz_assignments', result: { data: [{ id: 'assign-1', user_id: U1 }], error: null } }
   ])
   try {
     const res = await request(buildApp())
@@ -248,7 +247,68 @@ test('POST /api/assignments — a duplicated user_id produces exactly one insert
       .set('Authorization', `Bearer ${plainAToken()}`)
       .send({ quiz_id: QUIZ_ID, user_ids: [U1, U1] })
     assert.equal(res.status, 201)
-    assert.equal(restore.calls.filter((c) => c.table === 'quiz_assignments' && c.method === 'insert').length, 1)
+    const writes = restore.calls.filter((c) => c.table === 'quiz_assignments' && c.method === 'upsert')
+    assert.equal(writes.length, 1)
+    assert.equal(writes[0].args[0].length, 1)
+  } finally {
+    restore()
+  }
+})
+
+// The batch used to be a per-row insert LOOP. A conflict on row 2 was handled,
+// but ANY other mid-loop error (a concurrent delete of the target user, for
+// instance) left row 1 durably committed while the caller was told the whole
+// request had failed — and `created`/`skipped` were discarded. One conflict-
+// tolerant statement is one Postgres transaction: all rows or none.
+test('POST /api/assignments — the batch is ONE conflict-tolerant statement, not a per-row loop', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } },
+    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 4 }, error: null } },
+    { table: 'users', result: { data: [{ id: U1, punto_de_venta: 'Cerritos' }, { id: U2, punto_de_venta: 'Cerritos' }], error: null } },
+    { table: 'quiz_assignments', result: { data: [{ id: 'assign-1', user_id: U1 }, { id: 'assign-2', user_id: U2 }], error: null } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .post('/api/assignments')
+      .set('Authorization', `Bearer ${plainAToken()}`)
+      .send({ quiz_id: QUIZ_ID, user_ids: [U1, U2] })
+    assert.equal(res.status, 201)
+
+    const writes = restore.calls.filter((c) => c.table === 'quiz_assignments' && c.method === 'upsert')
+    assert.equal(writes.length, 1)
+    assert.equal(restore.calls.some((c) => c.table === 'quiz_assignments' && c.method === 'insert'), false)
+
+    const [rows, options] = writes[0].args
+    assert.equal(rows.length, 2)
+    assert.deepEqual(rows.map((r) => r.user_id), [U1, U2])
+    assert.equal(rows.every((r) => r.cycle === 4 && r.quiz_id === QUIZ_ID && r.assigned_by === PLAIN_A.id), true)
+    // onConflict names the UNIQUE (quiz_id, user_id) constraint from migration
+    // 009; ignoreDuplicates is what makes Postgres SKIP a conflicting row
+    // instead of failing the whole statement.
+    assert.deepEqual(options, { onConflict: 'quiz_id,user_id', ignoreDuplicates: true })
+  } finally {
+    restore()
+  }
+})
+
+// A non-conflict failure (concurrent delete of the target user -> FK
+// violation, for instance) must leave NOTHING committed — with the loop, the
+// rows written before it did survive.
+test('POST /api/assignments — a non-conflict database error commits nothing and surfaces as an error', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } },
+    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
+    { table: 'users', result: { data: [{ id: U1, punto_de_venta: 'Cerritos' }, { id: U2, punto_de_venta: 'Cerritos' }], error: null } },
+    { table: 'quiz_assignments', result: { data: null, error: { code: '23503', message: 'insert or update violates foreign key constraint' } } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .post('/api/assignments')
+      .set('Authorization', `Bearer ${plainAToken()}`)
+      .send({ quiz_id: QUIZ_ID, user_ids: [U1, U2] })
+    assert.equal(res.status >= 400, true)
+    // Exactly one write was ever issued, so there is no half-committed batch.
+    assert.equal(restore.calls.filter((c) => c.table === 'quiz_assignments' && c.method === 'upsert').length, 1)
   } finally {
     restore()
   }
@@ -260,7 +320,7 @@ test('POST /api/assignments — a superadmin can assign a cross-store user', asy
     { table: 'admins', result: { data: SUPER, error: null } },
     { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
     { table: 'users', result: { data: [{ id: U2, punto_de_venta: 'Campestre' }], error: null } },
-    { table: 'quiz_assignments', result: { data: { id: 'assign-1', user_id: U2 }, error: null } }
+    { table: 'quiz_assignments', result: { data: [{ id: 'assign-1', user_id: U2 }], error: null } }
   ])
   try {
     const res = await request(buildApp())
@@ -296,7 +356,7 @@ test('POST /api/assignments — same-store assignment succeeds and seeds cycle f
     { table: 'admins', result: { data: PLAIN_A, error: null } },
     { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 3 }, error: null } },
     { table: 'users', result: { data: [{ id: U1, punto_de_venta: 'Cerritos' }], error: null } },
-    { table: 'quiz_assignments', result: { data: { id: 'assign-1', user_id: U1 }, error: null } }
+    { table: 'quiz_assignments', result: { data: [{ id: 'assign-1', user_id: U1 }], error: null } }
   ])
   try {
     const res = await request(buildApp())
@@ -306,20 +366,23 @@ test('POST /api/assignments — same-store assignment succeeds and seeds cycle f
     assert.equal(res.status, 201)
     assert.deepEqual(res.body.created, [{ id: 'assign-1', userId: U1 }])
     assert.deepEqual(res.body.skipped, [])
-    const insert = restore.calls.find((c) => c.table === 'quiz_assignments' && c.method === 'insert')
-    assert.equal(insert.args[0].cycle, 3)
+    const upsert = restore.calls.find((c) => c.table === 'quiz_assignments' && c.method === 'upsert')
+    assert.equal(upsert.args[0][0].cycle, 3)
   } finally {
     restore()
   }
 })
 
+// ignoreDuplicates makes Postgres SKIP a conflicting row silently — it comes
+// back neither in the result set nor as an error. "Skipped" is therefore
+// computed by diffing the verified target ids against the ids the upsert
+// actually returned, not by catching a per-row 23505 anymore.
 test('POST /api/assignments — an already-assigned user is skipped, not a hard failure', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
     { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
     { table: 'users', result: { data: [{ id: U1, punto_de_venta: 'Cerritos' }, { id: U2, punto_de_venta: 'Cerritos' }], error: null } },
-    { table: 'quiz_assignments', result: { data: { id: 'assign-1', user_id: U1 }, error: null } },
-    { table: 'quiz_assignments', result: { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint' } } }
+    { table: 'quiz_assignments', result: { data: [{ id: 'assign-1', user_id: U1 }], error: null } }
   ])
   try {
     const res = await request(buildApp())

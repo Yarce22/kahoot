@@ -4,7 +4,6 @@ import { requireJwtMode } from '../middleware/jwtGate.js'
 import { requireAuth } from '../middleware/requireAuth.js'
 import { requireStoreScope, resolveStoreFilter, applyStoreFilter } from '../middleware/requireStoreScope.js'
 import { httpError } from '../lib/httpError.js'
-import { isUniqueViolation } from '../lib/pgErrors.js'
 
 export const assignmentsRouter = Router()
 
@@ -100,32 +99,36 @@ assignmentsRouter.post('/', async (req, res, next) => {
     return next(httpError(404, 'One or more user_ids do not exist'))
   }
 
-  const created = []
-  const skipped = []
+  // ONE upsert, not a per-row insert loop. A loop meant a mid-batch failure
+  // (a concurrent delete of a target user, say) left every row written before
+  // it durably committed while the caller was told the whole request failed.
+  // `ignoreDuplicates` makes Postgres SKIP a row that hits the (quiz_id,
+  // user_id) unique constraint from migration 009 instead of erroring on it,
+  // so a real conflict and a hard failure stay distinguishable: a conflict
+  // yields fewer returned rows, anything else yields `error`. Built from the
+  // VERIFIED rows, never the raw request body — only ids that survived the
+  // existence and store checks above can ever be written (and a duplicated id
+  // collapses to one row for free).
+  const rows = visibleUsers.map(({ id: userId }) => ({
+    quiz_id,
+    user_id: userId,
+    cycle: quiz.assignment_cycle,
+    assigned_by: req.admin.id
+  }))
 
-  // Per-row insert (not a single bulk insert) so ONE conflicting row can be
-  // skipped without failing the rest of the batch — supabase-js has no
-  // per-row ON CONFLICT reporting from a single multi-row insert call.
-  // Iterates the VERIFIED rows, never the raw request body — only ids that
-  // survived the existence and store checks above can ever be written (and a
-  // duplicated id collapses to one insert for free).
-  for (const { id: userId } of visibleUsers) {
-    const { data: row, error } = await supabase
-      .from('quiz_assignments')
-      .insert({ quiz_id, user_id: userId, cycle: quiz.assignment_cycle, assigned_by: req.admin.id })
-      .select('id, user_id')
-      .single()
+  const { data, error } = await supabase
+    .from('quiz_assignments')
+    .upsert(rows, { onConflict: 'quiz_id,user_id', ignoreDuplicates: true })
+    .select('id, user_id')
 
-    if (error) {
-      if (isUniqueViolation(error)) {
-        skipped.push({ userId, reason: 'already_assigned' })
-        continue
-      }
-      return next(error)
-    }
+  if (error) return next(error)
 
-    created.push({ id: row.id, userId: row.user_id })
-  }
+  const createdRows = data ?? []
+  const createdUserIds = new Set(createdRows.map((row) => row.user_id))
+  const created = createdRows.map((row) => ({ id: row.id, userId: row.user_id }))
+  const skipped = visibleUsers
+    .filter(({ id: userId }) => !createdUserIds.has(userId))
+    .map(({ id: userId }) => ({ userId, reason: 'already_assigned' }))
 
   res.status(201).json({ created, skipped })
 })
