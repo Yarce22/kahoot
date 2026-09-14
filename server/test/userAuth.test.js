@@ -3,6 +3,10 @@ import assert from 'node:assert/strict'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import express from 'express'
+// Mirrors src/index.js:2 — without it an async throw inside a route handler
+// never reaches errorHandler, so a crash-class bug hangs the request instead
+// of surfacing as a clean 500.
+import 'express-async-errors'
 
 process.env.JWT_SECRET ??= 'test-secret'
 process.env.SUPABASE_URL ??= 'http://localhost:54321'
