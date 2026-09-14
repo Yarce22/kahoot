@@ -32,6 +32,11 @@ const PLAIN_A = { id: 'admin-a', email: 'a@example.com', role: 'admin', is_activ
 const superToken = () => signToken({ sub: SUPER.id, email: SUPER.email })
 const plainAToken = () => signToken({ sub: PLAIN_A.id, email: PLAIN_A.email })
 
+// users.id is a UUID column, so a `:id` path fixture must be UUID-shaped: the
+// route refuses a malformed id before it can reach Postgres as a cast error.
+const TARGET_UUID = '11111111-1111-4111-8111-111111111111'
+const TARGET_GHOST_UUID = '99999999-9999-4999-8999-999999999999'
+
 // --- search-filter pipeline model ---
 //
 // There is no live database in this suite, so "does this search MATCH that
@@ -615,7 +620,7 @@ test('PATCH /api/users/:id — target outside the caller\'s store returns 404 (D
   ])
   try {
     const res = await request(buildApp())
-      .patch('/api/users/u1')
+      .patch(`/api/users/${TARGET_UUID}`)
       .set('Authorization', `Bearer ${plainAToken()}`)
       .send({ full_name: 'Renamed' })
     assert.equal(res.status, 404)
@@ -631,7 +636,7 @@ test('PATCH /api/users/:id — moving the target to another store is a 403 for a
   ])
   try {
     const res = await request(buildApp())
-      .patch('/api/users/u1')
+      .patch(`/api/users/${TARGET_UUID}`)
       .set('Authorization', `Bearer ${plainAToken()}`)
       .send({ punto_de_venta: 'Campestre' })
     assert.equal(res.status, 403)
@@ -648,7 +653,7 @@ test('PATCH /api/users/:id — a same-store update succeeds', async () => {
   ])
   try {
     const res = await request(buildApp())
-      .patch('/api/users/u1')
+      .patch(`/api/users/${TARGET_UUID}`)
       .set('Authorization', `Bearer ${plainAToken()}`)
       .send({ full_name: 'Renamed' })
     assert.equal(res.status, 200)
@@ -667,7 +672,7 @@ test('PATCH /api/users/:id — a non-string password returns 400, not a crash', 
     ])
     try {
       const res = await request(buildApp())
-        .patch('/api/users/u1')
+        .patch(`/api/users/${TARGET_UUID}`)
         .set('Authorization', `Bearer ${plainAToken()}`)
         .send({ password })
       assert.equal(res.status, 400, `password=${JSON.stringify(password)}`)
@@ -684,7 +689,7 @@ test('PATCH /api/users/:id — a blank or non-string full_name returns 400', asy
     ])
     try {
       const res = await request(buildApp())
-        .patch('/api/users/u1')
+        .patch(`/api/users/${TARGET_UUID}`)
         .set('Authorization', `Bearer ${plainAToken()}`)
         .send({ full_name })
       assert.equal(res.status, 400, `full_name=${JSON.stringify(full_name)}`)
@@ -702,7 +707,7 @@ test('PATCH /api/users/:id — a valid password is stored as a bcrypt hash', asy
   ])
   try {
     const res = await request(buildApp())
-      .patch('/api/users/u1')
+      .patch(`/api/users/${TARGET_UUID}`)
       .set('Authorization', `Bearer ${plainAToken()}`)
       .send({ password: 'newpw123456' })
     assert.equal(res.status, 200)
@@ -722,12 +727,40 @@ test('PATCH /api/users/:id — an unknown id returns 404, not 500', async () => 
   ])
   try {
     const res = await request(buildApp())
-      .patch('/api/users/does-not-exist')
+      .patch(`/api/users/${TARGET_GHOST_UUID}`)
       .set('Authorization', `Bearer ${plainAToken()}`)
       .send({ full_name: 'Renamed' })
     assert.equal(res.status, 404)
   } finally {
     restore()
+  }
+})
+
+// users.id is a uuid column, so a malformed `:id` reaches Postgres as an
+// UNCASTABLE literal (22P02), not as PostgREST's no-rows signal — and since
+// the not-found branch is gated on PGRST116 alone, the request fell through to
+// the generic error branch and answered 500. A missing or malformed id in the
+// URL (an unset client-side ref serialized as the literal string 'undefined',
+// say) is a routine client mistake, not a database failure. It answers the
+// SAME 404 a well-formed unknown id does, with no wording that would let a
+// caller tell the two apart — the D9 enumeration guard this handler already
+// applies to an out-of-store target.
+test('PATCH /api/users/:id — a non-UUID id returns 404, not 500, before any lookup', async () => {
+  for (const id of ['undefined', 'u1', 'null', `${TARGET_UUID}x`, '1']) {
+    const restore = mockSupabaseSequence([
+      { table: 'admins', result: { data: PLAIN_A, error: null } }
+    ])
+    try {
+      const res = await request(buildApp())
+        .patch(`/api/users/${id}`)
+        .set('Authorization', `Bearer ${plainAToken()}`)
+        .send({ full_name: 'Renamed' })
+      assert.equal(res.status, 404, id)
+      assert.equal(res.body.error, 'User not found', id)
+      assert.equal(restore.calls.some((c) => c.table === 'users'), false, id)
+    } finally {
+      restore()
+    }
   }
 })
 
@@ -743,7 +776,7 @@ test('PATCH /api/users/:id — a database failure on the target lookup is not re
   ])
   try {
     const res = await request(buildApp())
-      .patch('/api/users/u1')
+      .patch(`/api/users/${TARGET_UUID}`)
       .set('Authorization', `Bearer ${plainAToken()}`)
       .send({ full_name: 'Renamed' })
     assert.equal(res.status, 500)

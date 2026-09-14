@@ -41,6 +41,12 @@ const U1 = '11111111-1111-4111-8111-111111111111'
 const U2 = '22222222-2222-4222-8222-222222222222'
 const U_GHOST = '99999999-9999-4999-8999-999999999999'
 
+// quiz_assignments.id is a UUID column too, so a `:id` path fixture must be
+// UUID-shaped for the same reason: the route refuses a malformed id before it
+// can reach Postgres as an uncastable literal.
+const A1 = '33333333-3333-4333-8333-333333333333'
+const A_GHOST = '44444444-4444-4444-8444-444444444444'
+
 // --- audience ---
 
 // Every other token helper in this suite relies on signToken's default
@@ -203,7 +209,7 @@ test('DELETE /api/assignments/:id — a database failure on the assignment looku
   ])
   try {
     const res = await request(buildApp())
-      .delete('/api/assignments/assign-1')
+      .delete(`/api/assignments/${A1}`)
       .set('Authorization', `Bearer ${plainAToken()}`)
     assert.equal(res.status, 500)
     assert.equal(restore.calls.some((c) => c.table === 'quiz_assignments' && c.method === 'delete'), false)
@@ -238,11 +244,38 @@ test('DELETE /api/assignments/:id — an unknown id returns 404', async () => {
   ])
   try {
     const res = await request(buildApp())
-      .delete('/api/assignments/does-not-exist')
+      .delete(`/api/assignments/${A_GHOST}`)
       .set('Authorization', `Bearer ${plainAToken()}`)
     assert.equal(res.status, 404)
   } finally {
     restore()
+  }
+})
+
+// quiz_assignments.id is a uuid column, so a malformed `:id` reaches Postgres
+// as an UNCASTABLE literal (22P02), not as PostgREST's no-rows signal — and
+// since the not-found branch is gated on PGRST116 alone, the request fell
+// through to the generic error branch and answered 500. A missing or malformed
+// id in the URL (an unset client-side ref serialized as the literal string
+// 'undefined', say) is a routine client mistake, not a database failure. It
+// answers the SAME 404 a well-formed unknown id does, with no wording that
+// would let a caller tell the two apart — the D9 enumeration guard this
+// handler already applies to an out-of-store assignment.
+test('DELETE /api/assignments/:id — a non-UUID id returns 404, not 500, before any lookup', async () => {
+  for (const id of ['undefined', 'assign-1', 'null', `${A1}x`, '1']) {
+    const restore = mockSupabaseSequence([
+      { table: 'admins', result: { data: PLAIN_A, error: null } }
+    ])
+    try {
+      const res = await request(buildApp())
+        .delete(`/api/assignments/${id}`)
+        .set('Authorization', `Bearer ${plainAToken()}`)
+      assert.equal(res.status, 404, id)
+      assert.equal(res.body.error, 'Assignment not found', id)
+      assert.equal(restore.calls.some((c) => c.table === 'quiz_assignments'), false, id)
+    } finally {
+      restore()
+    }
   }
 })
 
@@ -809,7 +842,7 @@ test('DELETE /api/assignments/:id — a non-owner admin gets 403 even for an in-
   ])
   try {
     const res = await request(buildApp())
-      .delete('/api/assignments/assign-1')
+      .delete(`/api/assignments/${A1}`)
       .set('Authorization', `Bearer ${plainAToken()}`)
     assert.equal(res.status, 403)
     assert.equal(restore.calls.some((c) => c.table === 'quiz_assignments' && c.method === 'delete'), false)
@@ -827,7 +860,7 @@ test('DELETE /api/assignments/:id — a superadmin bypasses quiz ownership', asy
   ])
   try {
     const res = await request(buildApp())
-      .delete('/api/assignments/assign-1')
+      .delete(`/api/assignments/${A1}`)
       .set('Authorization', `Bearer ${superToken()}`)
     assert.equal(res.status, 204)
   } finally {
@@ -843,7 +876,7 @@ test('DELETE /api/assignments/:id — an unassignment attempt on an already-atte
   ])
   try {
     const res = await request(buildApp())
-      .delete('/api/assignments/assign-1')
+      .delete(`/api/assignments/${A1}`)
       .set('Authorization', `Bearer ${plainAToken()}`)
     assert.equal(res.status, 409)
     assert.equal(res.body.error, 'ASSIGNMENT_HAS_ATTEMPTS')
@@ -859,7 +892,7 @@ test('DELETE /api/assignments/:id — an assignment outside the caller\'s store 
   ])
   try {
     const res = await request(buildApp())
-      .delete('/api/assignments/assign-1')
+      .delete(`/api/assignments/${A1}`)
       .set('Authorization', `Bearer ${plainAToken()}`)
     assert.equal(res.status, 404)
   } finally {
@@ -876,7 +909,7 @@ test('DELETE /api/assignments/:id — an unattempted, in-scope assignment is rem
   ])
   try {
     const res = await request(buildApp())
-      .delete('/api/assignments/assign-1')
+      .delete(`/api/assignments/${A1}`)
       .set('Authorization', `Bearer ${plainAToken()}`)
     assert.equal(res.status, 204)
   } finally {

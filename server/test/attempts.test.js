@@ -37,6 +37,12 @@ const plainAToken = () => signToken({ sub: PLAIN_A.id, email: PLAIN_A.email })
 // exactly as Postgres would reject it.
 const USER_UUID = '11111111-2222-4333-8444-555555555555'
 
+// quiz_attempts.id is a UUID column too, so a `:id` path fixture must be
+// UUID-shaped for the same reason the filter fixtures are: the route now
+// refuses a malformed id before it can reach Postgres as a cast error.
+const ATTEMPT_UUID = '66666666-6666-4666-8666-666666666666'
+const ATTEMPT_GHOST_UUID = '77777777-7777-4777-8777-777777777777'
+
 // --- audience ---
 
 // Every other token helper in this suite relies on signToken's default
@@ -445,11 +451,38 @@ test('GET /api/attempts/:id — an unknown id returns 404', async () => {
   ])
   try {
     const res = await request(buildApp())
-      .get('/api/attempts/does-not-exist')
+      .get(`/api/attempts/${ATTEMPT_GHOST_UUID}`)
       .set('Authorization', `Bearer ${plainAToken()}`)
     assert.equal(res.status, 404)
   } finally {
     restore()
+  }
+})
+
+// quiz_attempts.id is a uuid column, so a malformed `:id` reaches Postgres as
+// an UNCASTABLE literal (22P02), not as PostgREST's no-rows signal — and since
+// the not-found branch is gated on PGRST116 alone, the request fell through to
+// the generic error branch and answered 500. A missing or malformed id in the
+// URL (an unset client-side ref serialized as the literal string 'undefined',
+// say) is a routine client mistake, not a database failure. It answers the
+// SAME 404 a well-formed unknown id does, with no wording that would let a
+// caller tell the two apart — the enumeration-guard convention this router
+// already follows for a cross-store row.
+test('GET /api/attempts/:id — a non-UUID id returns 404, not 500, before any lookup', async () => {
+  for (const id of ['undefined', 'attempt-1', 'null', `${ATTEMPT_UUID}x`, '1']) {
+    const restore = mockSupabaseSequence([
+      { table: 'admins', result: { data: PLAIN_A, error: null } }
+    ])
+    try {
+      const res = await request(buildApp())
+        .get(`/api/attempts/${id}`)
+        .set('Authorization', `Bearer ${plainAToken()}`)
+      assert.equal(res.status, 404, id)
+      assert.equal(res.body.error, 'Attempt not found', id)
+      assert.equal(restore.calls.some((c) => c.table === 'quiz_attempts'), false, id)
+    } finally {
+      restore()
+    }
   }
 })
 
@@ -465,7 +498,7 @@ test('GET /api/attempts/:id — a database failure is not reported as 404', asyn
   ])
   try {
     const res = await request(buildApp())
-      .get('/api/attempts/attempt-1')
+      .get(`/api/attempts/${ATTEMPT_UUID}`)
       .set('Authorization', `Bearer ${plainAToken()}`)
     assert.equal(res.status, 500)
   } finally {
@@ -490,7 +523,7 @@ test('GET /api/attempts/:id — an attempt outside the caller\'s store returns 4
   ])
   try {
     const res = await request(buildApp())
-      .get('/api/attempts/attempt-1')
+      .get(`/api/attempts/${ATTEMPT_UUID}`)
       .set('Authorization', `Bearer ${plainAToken()}`)
     assert.equal(res.status, 404)
   } finally {
@@ -533,7 +566,7 @@ test('GET /api/attempts/:id — an in-scope attempt includes correctAnswer per a
   ])
   try {
     const res = await request(buildApp())
-      .get('/api/attempts/attempt-1')
+      .get(`/api/attempts/${ATTEMPT_UUID}`)
       .set('Authorization', `Bearer ${plainAToken()}`)
     assert.equal(res.status, 200)
     assert.equal(res.body.answers.length, 1)
@@ -562,7 +595,7 @@ test('GET /api/attempts/:id — a superadmin can view a cross-store attempt', as
   ])
   try {
     const res = await request(buildApp())
-      .get('/api/attempts/attempt-1')
+      .get(`/api/attempts/${ATTEMPT_UUID}`)
       .set('Authorization', `Bearer ${superToken()}`)
     assert.equal(res.status, 200)
     assert.equal(res.body.user.puntoDeVenta, 'Campestre')

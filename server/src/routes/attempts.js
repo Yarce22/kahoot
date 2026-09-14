@@ -176,6 +176,17 @@ attemptsRouter.get('/', async (req, res, next) => {
 attemptsRouter.get('/:id', async (req, res, next) => {
   const { id } = req.params
 
+  // quiz_attempts.id is a uuid column, so a malformed `:id` reaches Postgres as
+  // an UNCASTABLE literal (22P02) — NOT as PostgREST's no-rows signal — and the
+  // not-found branch below, gated on PGRST116 alone, therefore fell through to
+  // the generic error branch and answered 500. A missing or malformed id in the
+  // URL (an unset client-side ref serialized as the literal string 'undefined',
+  // say) is a routine client mistake, not a database failure, so it answers the
+  // SAME 404 a well-formed unknown id does — same message, so a caller cannot
+  // tell "malformed" apart from "not found", exactly as the store check below
+  // refuses to distinguish "another store" from "does not exist" (D9).
+  if (!UUID_RE.test(id)) return next(httpError(404, 'Attempt not found'))
+
   const { data: attempt, error } = await supabase
     .from('quiz_attempts')
     .select('id, quiz_id, cycle, status, total_questions, correct_count, score_percent, started_at, submitted_at, quiz:quizzes(id, title), user:users(id, full_name, email, punto_de_venta)')

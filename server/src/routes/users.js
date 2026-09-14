@@ -12,6 +12,7 @@ export const usersRouter = Router()
 
 const BCRYPT_COST = 12
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MIN_PASSWORD_LENGTH = 8
 const DEFAULT_PAGE = 1
 const DEFAULT_PAGE_SIZE = 25
@@ -200,6 +201,17 @@ usersRouter.patch('/:id', async (req, res, next) => {
   if (password !== undefined && (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH)) {
     return next(httpError(400, `Password must be at least ${MIN_PASSWORD_LENGTH} characters`))
   }
+
+  // users.id is a uuid column, so a malformed `:id` reaches Postgres as an
+  // UNCASTABLE literal (22P02) — NOT as PostgREST's no-rows signal — and the
+  // not-found branch below, gated on PGRST116 alone, therefore fell through to
+  // the generic error branch and answered 500. A missing or malformed id in the
+  // URL (an unset client-side ref serialized as the literal string 'undefined',
+  // say) is a routine client mistake, not a database failure, so it answers the
+  // SAME 404 a well-formed unknown id does — same message, so a caller cannot
+  // tell "malformed" apart from "not found", exactly as the store check below
+  // refuses to distinguish "another store" from "does not exist" (D9).
+  if (!UUID_RE.test(id)) return next(httpError(404, 'User not found'))
 
   const { data: target, error: targetError } = await supabase
     .from('users')

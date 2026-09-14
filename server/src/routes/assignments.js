@@ -258,6 +258,17 @@ assignmentsRouter.get('/', async (req, res, next) => {
 assignmentsRouter.delete('/:id', async (req, res, next) => {
   const { id } = req.params
 
+  // quiz_assignments.id is a uuid column, so a malformed `:id` reaches Postgres
+  // as an UNCASTABLE literal (22P02) — NOT as PostgREST's no-rows signal — and
+  // the not-found branch below, gated on PGRST116 alone, therefore fell through
+  // to the generic error branch and answered 500. A missing or malformed id in
+  // the URL (an unset client-side ref serialized as the literal string
+  // 'undefined', say) is a routine client mistake, not a database failure, so
+  // it answers the SAME 404 a well-formed unknown id does — same message, so a
+  // caller cannot tell "malformed" apart from "not found", exactly as the store
+  // check below refuses to distinguish "another store" from "does not exist".
+  if (!isUuid(id)) return next(httpError(404, 'Assignment not found'))
+
   const { data: assignment, error } = await supabase
     .from('quiz_assignments')
     .select('id, quiz_id, user:users(punto_de_venta), quiz:quizzes(id, owner_id)')
