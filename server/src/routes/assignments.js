@@ -215,6 +215,17 @@ assignmentsRouter.post('/reactivate', async (req, res, next) => {
 
   if (!quiz_id) return next(httpError(400, 'quiz_id is required'))
 
+  // user_ids stays OPTIONAL (omitted/null = every assignment on the quiz),
+  // but when supplied it must be a non-empty array of strings — the same
+  // contract POST / enforces. Validated BEFORE the RPC because the RPC bumps
+  // quizzes.assignment_cycle unconditionally, before it matches any row: a
+  // request that could never match anything would still advance the cycle.
+  const hasUserIds = user_ids !== undefined && user_ids !== null
+  if (hasUserIds) {
+    const isValid = Array.isArray(user_ids) && user_ids.length > 0 && user_ids.every((id) => typeof id === 'string')
+    if (!isValid) return next(httpError(400, 'user_ids must be a non-empty array of strings'))
+  }
+
   const { data: quiz, error: quizError } = await supabase
     .from('quizzes')
     .select('id, owner_id')
@@ -226,7 +237,7 @@ assignmentsRouter.post('/reactivate', async (req, res, next) => {
 
   const { data, error } = await supabase.rpc('reactivate_quiz_assignments', {
     target_quiz_id: quiz_id,
-    target_user_ids: user_ids ?? null,
+    target_user_ids: hasUserIds ? user_ids : null,
     scope_punto_de_venta: req.admin.role === 'superadmin' ? null : req.admin.punto_de_venta
   })
 
@@ -237,5 +248,21 @@ assignmentsRouter.post('/reactivate', async (req, res, next) => {
   }
 
   const rows = data ?? []
-  res.json({ reactivated: rows.length, cycle: rows[0]?.new_cycle ?? null })
+
+  // Zero matched rows does NOT mean "nothing happened": the RPC already bumped
+  // assignment_cycle before filtering. Reporting `cycle: null` here told the
+  // caller the opposite of what the database now holds, so read the real value
+  // back instead. A failed read-back degrades to null rather than turning a
+  // successful reactivation into a 500.
+  let cycle = rows[0]?.new_cycle ?? null
+  if (rows.length === 0) {
+    const { data: bumped } = await supabase
+      .from('quizzes')
+      .select('assignment_cycle')
+      .eq('id', quiz_id)
+      .single()
+    cycle = bumped?.assignment_cycle ?? null
+  }
+
+  res.json({ reactivated: rows.length, cycle })
 })

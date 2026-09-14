@@ -436,6 +436,69 @@ test('POST /api/assignments/reactivate — the RPC\'s quiz_not_found exception m
   }
 })
 
+// POST / validates user_ids as a non-empty array; reactivate did not validate
+// it at all. An empty array or a bare string reached the RPC, which bumps the
+// quiz's assignment_cycle BEFORE matching any rows — so a request that could
+// never match anything still advanced the cycle.
+test('POST /api/assignments/reactivate — an invalid user_ids is rejected 400 before the RPC runs', async () => {
+  for (const user_ids of [[], 'u1', [1, 2], [null], {}]) {
+    const restore = mockSupabaseSequence([
+      { table: 'admins', result: { data: PLAIN_A, error: null } }
+    ])
+    try {
+      const res = await request(buildApp())
+        .post('/api/assignments/reactivate')
+        .set('Authorization', `Bearer ${plainAToken()}`)
+        .send({ quiz_id: QUIZ_ID, user_ids })
+      assert.equal(res.status, 400, `user_ids=${JSON.stringify(user_ids)}`)
+      assert.equal(restore.calls.some((c) => c.method === 'rpc'), false)
+    } finally {
+      restore()
+    }
+  }
+})
+
+test('POST /api/assignments/reactivate — an omitted user_ids still means "every assignment" (null)', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } },
+    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id }, error: null } },
+    { rpc: 'reactivate_quiz_assignments', result: { data: [{ assignment_id: 'assign-1', new_cycle: 2 }], error: null } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .post('/api/assignments/reactivate')
+      .set('Authorization', `Bearer ${plainAToken()}`)
+      .send({ quiz_id: QUIZ_ID })
+    assert.equal(res.status, 200)
+    const rpcCall = restore.calls.find((c) => c.method === 'rpc')
+    assert.equal(rpcCall.args[0].target_user_ids, null)
+  } finally {
+    restore()
+  }
+})
+
+// The RPC bumps assignment_cycle unconditionally, before it matches rows. A
+// zero-match reactivate therefore DID advance the cycle while reporting
+// `cycle: null` — a 200 whose payload contradicted the database.
+test('POST /api/assignments/reactivate — a zero-match run reports the real, already-bumped cycle', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } },
+    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id }, error: null } },
+    { rpc: 'reactivate_quiz_assignments', result: { data: [], error: null } },
+    { table: 'quizzes', result: { data: { assignment_cycle: 7 }, error: null } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .post('/api/assignments/reactivate')
+      .set('Authorization', `Bearer ${plainAToken()}`)
+      .send({ quiz_id: QUIZ_ID, user_ids: ['u-in-another-store'] })
+    assert.equal(res.status, 200)
+    assert.deepEqual(res.body, { reactivated: 0, cycle: 7 })
+  } finally {
+    restore()
+  }
+})
+
 test('POST /api/assignments/reactivate — a non-owner admin gets 403', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
