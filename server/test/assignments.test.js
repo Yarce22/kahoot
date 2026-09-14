@@ -1,5 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync, readdirSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import express from 'express'
 // Mirrors src/index.js:2 — without it an async throw inside a route handler
 // never reaches errorHandler, so a crash-class bug hangs the request instead
@@ -1134,6 +1137,91 @@ test('POST /api/assignments/reactivate — a non-owner admin gets 403', async ()
       .set('Authorization', `Bearer ${plainAToken()}`)
       .send({ quiz_id: QUIZ_ID })
     assert.equal(res.status, 403)
+  } finally {
+    restore()
+  }
+})
+
+// --- reactivate never touches a deactivated usuario ---
+
+// POST / refuses to assign a quiz to a deactivated usuario: they can never log
+// in (userAuth rejects !is_active), so the row can never be completed and
+// permanently skews every completion metric. Reactivate re-opens EXACTLY that
+// kind of row — status back to 'pending', completed_at cleared, cycle bumped —
+// so without the same rule it recreates the problem POST / just closed.
+//
+// The rule has to live in the RPC, not in the route: when user_ids is omitted
+// the route names no users at all ("reactivate everyone on this quiz"), so
+// there is nothing for a route-level check to filter. The RPC's own UPDATE
+// predicate is the only place that sees the rows it is about to touch.
+//
+// There is no live database in this suite, so the predicate is pinned against
+// the SQL sources themselves — the authoritative migration and the
+// consolidated schema, which this repo keeps in sync (see migration 011).
+
+const SUPABASE_DIR = fileURLToPath(new URL('../../supabase/', import.meta.url))
+const REACTIVATE_MARKER = 'CREATE OR REPLACE FUNCTION reactivate_quiz_assignments'
+
+// The LAST definition in a file wins in Postgres too, so read the same one.
+function reactivateFunctionBody(sql) {
+  const start = sql.lastIndexOf(REACTIVATE_MARKER)
+  if (start === -1) return null
+  const end = sql.indexOf('$$;', start)
+  return sql.slice(start, end === -1 ? sql.length : end + 3)
+}
+
+function readSql(...segments) {
+  return readFileSync(path.join(SUPABASE_DIR, ...segments), 'utf8')
+}
+
+test('reactivate_quiz_assignments — the live SQL excludes a deactivated usuario from the UPDATE', () => {
+  // The authoritative definition is the one in the HIGHEST-numbered migration
+  // that redefines the function — an earlier migration's copy is already
+  // superseded by the time the schema is current.
+  const migrations = readdirSync(path.join(SUPABASE_DIR, 'migrations'))
+    .filter((f) => f.endsWith('.sql'))
+    .sort()
+  const latest = [...migrations].reverse().find((f) => reactivateFunctionBody(readSql('migrations', f)) !== null)
+  assert.ok(latest, 'no migration defines reactivate_quiz_assignments')
+
+  const sources = [
+    [`migrations/${latest}`, reactivateFunctionBody(readSql('migrations', latest))],
+    ['schema.sql', reactivateFunctionBody(readSql('schema.sql'))]
+  ]
+
+  for (const [name, body] of sources) {
+    assert.ok(body, `${name} must define reactivate_quiz_assignments`)
+    // The join to users already exists (it is what scope_punto_de_venta
+    // filters on), so the guard is one more predicate on the SAME alias — it
+    // costs no extra round trip and it binds whether the caller named an
+    // explicit user_ids subset or asked for the whole quiz.
+    assert.match(
+      body,
+      /AND\s+u\.is_active\b/,
+      `${name}: the UPDATE predicate must exclude a deactivated usuario (AND u.is_active)`
+    )
+  }
+})
+
+// The route-side half of the same contract: the RPC reports only the rows it
+// actually touched, so a deactivated usuario named in an explicit user_ids
+// subset simply does not come back — and `reactivated` must count the returned
+// rows, never the requested ids.
+test('POST /api/assignments/reactivate — a deactivated usuario in user_ids is not counted as reactivated', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } },
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: PLAIN_A.id }, error: null } },
+    // U1 is active, U2 is deactivated — the RPC's predicate skips U2's row, so
+    // only U1's assignment comes back.
+    { rpc: 'reactivate_quiz_assignments', result: { data: [{ assignment_id: A1, new_cycle: 2 }], error: null } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .post('/api/assignments/reactivate')
+      .set('Authorization', `Bearer ${plainAToken()}`)
+      .send({ quiz_id: QUIZ_ID, user_ids: [U1, U2] })
+    assert.equal(res.status, 200)
+    assert.deepEqual(res.body, { reactivated: 1, cycle: 2 })
   } finally {
     restore()
   }
