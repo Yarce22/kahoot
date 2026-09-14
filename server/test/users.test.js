@@ -82,6 +82,82 @@ test('GET /api/users — a superadmin sees every store when no filter is given',
   }
 })
 
+// spec (route contract): GET /?punto_de_venta&q&is_active&page&page_size —
+// `q` was silently dropped from the implementation.
+test('GET /api/users — q searches full_name and email with a single OR filter', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } },
+    { table: 'users', result: { data: [], error: null, count: 0 } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .get('/api/users?q=ana')
+      .set('Authorization', `Bearer ${superToken()}`)
+    assert.equal(res.status, 200)
+    const orCall = restore.calls.find((c) => c.table === 'users' && c.method === 'or')
+    assert.deepEqual(orCall.args, ['full_name.ilike."%ana%",email.ilike."%ana%"'])
+  } finally {
+    restore()
+  }
+})
+
+// A comma separates the two branches of PostgREST's `or`, and a double quote
+// terminates a quoted value — an unescaped one would let the search box
+// rewrite the filter expression itself.
+test('GET /api/users — q escapes the characters that delimit PostgREST or() syntax', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } },
+    { table: 'users', result: { data: [], error: null, count: 0 } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .get(`/api/users?q=${encodeURIComponent('a,b"c')}`)
+      .set('Authorization', `Bearer ${superToken()}`)
+    assert.equal(res.status, 200)
+    const orCall = restore.calls.find((c) => c.table === 'users' && c.method === 'or')
+    assert.deepEqual(orCall.args, ['full_name.ilike."%a,b\\"c%",email.ilike."%a,b\\"c%"'])
+  } finally {
+    restore()
+  }
+})
+
+// % and _ are LIKE metacharacters and PostgREST exposes no ESCAPE clause, so
+// a bare '%' would turn the search into "match everything".
+test('GET /api/users — q strips LIKE wildcard metacharacters', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } },
+    { table: 'users', result: { data: [], error: null, count: 0 } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .get(`/api/users?q=${encodeURIComponent('a%b_c')}`)
+      .set('Authorization', `Bearer ${superToken()}`)
+    assert.equal(res.status, 200)
+    const orCall = restore.calls.find((c) => c.table === 'users' && c.method === 'or')
+    assert.deepEqual(orCall.args, ['full_name.ilike."%abc%",email.ilike."%abc%"'])
+  } finally {
+    restore()
+  }
+})
+
+test('GET /api/users — a blank q applies no search filter at all', async () => {
+  for (const q of ['', '   ', '%%']) {
+    const restore = mockSupabaseSequence([
+      { table: 'admins', result: { data: SUPER, error: null } },
+      { table: 'users', result: { data: [], error: null, count: 0 } }
+    ])
+    try {
+      const res = await request(buildApp())
+        .get(`/api/users?q=${encodeURIComponent(q)}`)
+        .set('Authorization', `Bearer ${superToken()}`)
+      assert.equal(res.status, 200, JSON.stringify(q))
+      assert.equal(restore.calls.some((c) => c.table === 'users' && c.method === 'or'), false, JSON.stringify(q))
+    } finally {
+      restore()
+    }
+  }
+})
+
 // Paging used to fetch the whole matching set and slice it in JS. PostgREST
 // caps a response at max-rows, so `total` was really "rows this response
 // happened to contain" and every page past the cap was unreachable.

@@ -22,6 +22,24 @@ const PUNTO_DE_VENTA_ERROR = `punto_de_venta must be one of: ${PUNTOS_DE_VENTA.j
 // meaningless without a JWT admin identity (design D3/D4).
 usersRouter.use(requireJwtMode, requireAuth, requireStoreScope)
 
+// buildSearchFilter — renders `q` into a PostgREST `or` expression matching
+// either name or email. Two layers of neutralization, because the value lands
+// inside a filter STRING, not a bound parameter:
+//   1. `%` and `_` are LIKE metacharacters and PostgREST exposes no ESCAPE
+//      clause, so a bare `%` would turn the search into "match everything".
+//      They are dropped rather than escaped.
+//   2. `,` separates the two branches of `or` and `"` terminates a quoted
+//      value, so the term is wrapped in quotes with `\` and `"` escaped —
+//      otherwise the search box could rewrite the filter expression itself.
+// Returns null when nothing searchable survives, so no filter is applied.
+function buildSearchFilter(q) {
+  if (typeof q !== 'string') return null
+  const term = q.replace(/[%_]/g, '').trim()
+  if (term.length === 0) return null
+  const escaped = term.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  return `full_name.ilike."%${escaped}%",email.ilike."%${escaped}%"`
+}
+
 function parsePagination(query) {
   const page = Math.max(1, parseInt(query.page, 10) || DEFAULT_PAGE)
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, parseInt(query.page_size, 10) || DEFAULT_PAGE_SIZE))
@@ -56,6 +74,9 @@ usersRouter.get('/', async (req, res, next) => {
 
   query = applyStoreFilter(query, effectiveStore)
   if (req.query.is_active !== undefined) query = query.eq('is_active', req.query.is_active === 'true')
+
+  const searchFilter = buildSearchFilter(req.query.q)
+  if (searchFilter) query = query.or(searchFilter)
 
   // `.range` is inclusive on both ends, hence the -1.
   query = query.range(start, start + pageSize - 1)
