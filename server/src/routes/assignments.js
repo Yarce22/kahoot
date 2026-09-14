@@ -85,7 +85,7 @@ assignmentsRouter.post('/', async (req, res, next) => {
 
   const { data: targetUsers, error: usersError } = await supabase
     .from('users')
-    .select('id, punto_de_venta')
+    .select('id, punto_de_venta, is_active')
     .in('id', user_ids)
 
   if (usersError) return next(usersError)
@@ -106,9 +106,19 @@ assignmentsRouter.post('/', async (req, res, next) => {
   // written. Without that, an id that matched no user was invisible to the
   // store guard (which only inspects what the DB returned) yet still reached
   // the write — a cross-store check bypassed by a typo.
+  //
+  // is_active=false is this table's soft-delete, and it is folded into the
+  // SAME check for the same reason: a deactivated usuario cannot log in
+  // (userAuth rejects !is_active), so assigning them a quiz creates a row that
+  // can never be completed and permanently skews every completion metric. It
+  // collapses into the identical 404 rather than a distinct message, because
+  // "this id exists but is deactivated" is the same enumeration oracle the
+  // store check above refuses to be. The rule is not a scoping rule, so a
+  // superadmin is bound by it too.
+  const assignableUsers = resolvedUsers.filter((u) => u.is_active)
   const visibleUsers = req.admin.role === 'superadmin'
-    ? resolvedUsers
-    : resolvedUsers.filter((u) => u.punto_de_venta === req.admin.punto_de_venta)
+    ? assignableUsers
+    : assignableUsers.filter((u) => u.punto_de_venta === req.admin.punto_de_venta)
 
   if (visibleUsers.length !== new Set(user_ids).size) {
     return next(httpError(404, 'One or more user_ids do not exist'))
