@@ -85,7 +85,11 @@ assignmentsRouter.post('/', async (req, res, next) => {
 assignmentsRouter.get('/', async (req, res, next) => {
   let effectiveStore
   try {
-    effectiveStore = resolveStoreFilter(req, req.query.punto_de_venta)
+    // `|| undefined`: `?punto_de_venta=` (what an "All stores" <select> option
+    // with value="" submits) is not nullish, so passing it through would read
+    // as an EXPLICIT filter for the store literally named '' — zero rows for a
+    // superadmin who asked for everything, and a spurious 403 for anyone else.
+    effectiveStore = resolveStoreFilter(req, req.query.punto_de_venta || undefined)
   } catch (err) {
     return next(err)
   }

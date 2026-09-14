@@ -117,6 +117,58 @@ test('store scoping — a superadmin\'s list requests carry NO forced store filt
   }
 })
 
+// --- an empty punto_de_venta query param means "no filter", not "the store
+// literally named ''" ---
+//
+// `?punto_de_venta=` is what an HTML <select> whose "All stores" option has
+// value="" submits. It is not nullish, so it used to reach resolveStoreFilter
+// as an EXPLICIT filter: a superadmin asking for every store got
+// .eq('punto_de_venta', '') and therefore zero rows.
+
+test('store scoping — an empty punto_de_venta param leaves a superadmin unfiltered across all three lists', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } },
+    { table: 'users', result: { data: [{ id: 'u1' }, { id: 'u2' }], error: null, count: 2 } },
+    { table: 'admins', result: { data: SUPER, error: null } },
+    { table: 'quiz_assignments', result: { data: [], error: null, count: 0 } },
+    { table: 'admins', result: { data: SUPER, error: null } },
+    { table: 'quiz_attempts', result: { data: [], error: null, count: 0 } }
+  ])
+  const app = buildApp()
+  try {
+    const usersRes = await request(app).get('/api/users?punto_de_venta=').set('Authorization', `Bearer ${superToken()}`)
+    const assignmentsRes = await request(app).get('/api/assignments?punto_de_venta=').set('Authorization', `Bearer ${superToken()}`)
+    const attemptsRes = await request(app).get('/api/attempts?punto_de_venta=').set('Authorization', `Bearer ${superToken()}`)
+
+    assert.equal(usersRes.status, 200)
+    assert.equal(assignmentsRes.status, 200)
+    assert.equal(attemptsRes.status, 200)
+    assert.equal(usersRes.body.users.length, 2)
+
+    const storeFilters = restore.calls.filter(
+      (c) => c.method === 'eq' && (c.args[0] === 'punto_de_venta' || c.args[0] === 'user.punto_de_venta')
+    )
+    assert.deepEqual(storeFilters, [])
+  } finally {
+    restore()
+  }
+})
+
+test('store scoping — an empty punto_de_venta param scopes a non-superadmin to their own store, not a 403', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: ADMIN_A, error: null } },
+    { table: 'users', result: { data: [], error: null, count: 0 } }
+  ])
+  try {
+    const res = await request(buildApp()).get('/api/users?punto_de_venta=').set('Authorization', `Bearer ${adminAToken()}`)
+    assert.equal(res.status, 200)
+    const eqCall = restore.calls.find((c) => c.table === 'users' && c.method === 'eq')
+    assert.deepEqual(eqCall.args, ['punto_de_venta', STORE_A])
+  } finally {
+    restore()
+  }
+})
+
 // --- reactivation only touches the caller's own store, even when
 // superadmin-visible cross-store rows exist on the same quiz ---
 //
