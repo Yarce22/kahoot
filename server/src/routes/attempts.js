@@ -122,8 +122,15 @@ attemptsRouter.get('/', async (req, res, next) => {
   const { data, error, count } = await query
   if (error) return next(error)
 
+  // Defense in depth behind the `!inner` embed above. `!inner` is what makes
+  // the store filter EXCLUDE non-matching rows rather than return them with a
+  // nulled user, so a row arriving here without a user means that embed is not
+  // doing its job. Such a row's store cannot be verified, so it is dropped
+  // rather than serialized as `user: null` — fail closed, not open.
+  const verifiableRows = (data ?? []).filter((a) => a.user)
+
   res.json({
-    attempts: (data ?? []).map(serializeAttemptRow),
+    attempts: verifiableRows.map(serializeAttemptRow),
     page,
     page_size: pageSize,
     total: count ?? 0

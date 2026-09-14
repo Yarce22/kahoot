@@ -281,7 +281,20 @@ test('GET /api/assignments — a plain admin only sees their own store', async (
 test('GET /api/assignments — the list is paged via range(), bounding the follow-up in() lookup', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: SUPER, error: null } },
-    { table: 'quiz_assignments', result: { data: [{ id: 'a1', cycle: 1 }, { id: 'a2', cycle: 1 }], error: null, count: 5000 } },
+    // Rows carry a user embed because the select uses `users!inner` — a row
+    // without one is a data-integrity anomaly and gets dropped (see the
+    // no-user-embed test above).
+    {
+      table: 'quiz_assignments',
+      result: {
+        data: [
+          { id: 'a1', cycle: 1, user: { id: 'u1', full_name: 'U1', email: 'u1@x.com', punto_de_venta: 'Cerritos' } },
+          { id: 'a2', cycle: 1, user: { id: 'u2', full_name: 'U2', email: 'u2@x.com', punto_de_venta: 'Campestre' } }
+        ],
+        error: null,
+        count: 5000
+      }
+    },
     { table: 'quiz_attempts', result: { data: [{ assignment_id: 'a1', cycle: 1, status: 'completed' }], error: null } }
   ])
   try {
@@ -322,6 +335,50 @@ test('GET /api/assignments — page_size is capped so the in() fan-out stays bou
     assert.equal(res.body.page_size, 100)
     const rangeCall = restore.calls.find((c) => c.table === 'quiz_assignments' && c.method === 'range')
     assert.deepEqual(rangeCall.args, [0, 99])
+  } finally {
+    restore()
+  }
+})
+
+// The eq('user.punto_de_venta', ...) assertion above is NOT sufficient on its
+// own: PostgREST only EXCLUDES a parent row whose embed fails to match when
+// the embed is `!inner`. Drop the `!inner` and the same filter returns every
+// assignment with a nulled-out user object — the eq() assertion still passes
+// while store isolation is gone. Pin the embed syntax itself.
+test('GET /api/assignments — the store-scoped select uses an !inner user embed', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } },
+    { table: 'quiz_assignments', result: { data: [], error: null, count: 0 } }
+  ])
+  try {
+    await request(buildApp()).get('/api/assignments').set('Authorization', `Bearer ${plainAToken()}`)
+    const selectCall = restore.calls.find((c) => c.table === 'quiz_assignments' && c.method === 'select')
+    assert.match(selectCall.args[0], /user:users!inner\(/)
+  } finally {
+    restore()
+  }
+})
+
+// Defense in depth behind the !inner embed: if a row ever arrives without a
+// user, its store CANNOT be verified, so it must not be served.
+test('GET /api/assignments — a row with no user embed is dropped, not served with user:null', async () => {
+  const rows = [
+    { id: 'a1', quiz_id: QUIZ_ID, quiz: { title: 'Q' }, status: 'pending', cycle: 1, assigned_at: 'x', completed_at: null, user: null },
+    { id: 'a2', quiz_id: QUIZ_ID, quiz: { title: 'Q' }, status: 'pending', cycle: 1, assigned_at: 'x', completed_at: null, user: { id: 'u1', full_name: 'U1', email: 'u1@x.com', punto_de_venta: 'Cerritos' } }
+  ]
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } },
+    { table: 'quiz_assignments', result: { data: rows, error: null, count: 2 } },
+    { table: 'quiz_attempts', result: { data: [], error: null } }
+  ])
+  try {
+    const res = await request(buildApp()).get('/api/assignments').set('Authorization', `Bearer ${plainAToken()}`)
+    assert.equal(res.status, 200)
+    assert.deepEqual(res.body.assignments.map((a) => a.id), ['a2'])
+    assert.equal(res.body.assignments.some((a) => a.user === null), false)
+    // The dropped row's id must not leak into the follow-up fan-out either.
+    const inCall = restore.calls.find((c) => c.table === 'quiz_attempts' && c.method === 'in')
+    assert.deepEqual(inCall.args, ['assignment_id', ['a2']])
   } finally {
     restore()
   }

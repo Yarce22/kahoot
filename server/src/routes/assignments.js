@@ -163,7 +163,13 @@ assignmentsRouter.get('/', async (req, res, next) => {
   const { data: assignments, error, count } = await query
   if (error) return next(error)
 
-  const rows = assignments ?? []
+  // Defense in depth behind the `!inner` embed above. `!inner` is what makes
+  // the store filter EXCLUDE non-matching rows rather than return them with a
+  // nulled user, so a row arriving here without a user means that embed is not
+  // doing its job. Such a row's store cannot be verified, so it is dropped
+  // rather than serialized as `user: null` — fail closed, not open. Filtered
+  // BEFORE assignmentIds so a dropped row cannot leak into the fan-out either.
+  const rows = (assignments ?? []).filter((a) => a.user)
   const assignmentIds = rows.map((a) => a.id)
 
   // attemptStatus — the CURRENT-cycle attempt only (an older cycle's

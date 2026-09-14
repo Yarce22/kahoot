@@ -97,6 +97,60 @@ test('store scoping — users, assignments and attempts lists are ALL filtered t
     assert.deepEqual(usersEq.args, ['punto_de_venta', STORE_A])
     assert.deepEqual(assignmentsEq.args, ['user.punto_de_venta', STORE_A])
     assert.deepEqual(attemptsEq.args, ['user.punto_de_venta', STORE_A])
+
+    // The eq() assertions above are necessary but NOT sufficient. Both
+    // assignments and attempts scope through an EMBEDDED column, and PostgREST
+    // only EXCLUDES a parent row whose embed fails to match when the embed is
+    // `!inner` — without it the same eq() returns every row with the user
+    // object nulled out. Dropping `!inner` is therefore a silent, total loss
+    // of store isolation that every eq()-shaped assertion would still pass.
+    // Pin the embed syntax itself so that regression fails here immediately.
+    const assignmentsSelect = restore.calls.find((c) => c.table === 'quiz_assignments' && c.method === 'select')
+    const attemptsSelect = restore.calls.find((c) => c.table === 'quiz_attempts' && c.method === 'select')
+    assert.match(assignmentsSelect.args[0], /user:users!inner\(/)
+    assert.match(attemptsSelect.args[0], /user:users!inner\(/)
+  } finally {
+    restore()
+  }
+})
+
+// The counterpart to the !inner assertion: a row whose user embed is absent
+// cannot have its store verified, so neither list may serve it.
+test('store scoping — assignments and attempts both DROP a row with no user embed', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: ADMIN_A, error: null } },
+    {
+      table: 'quiz_assignments',
+      result: {
+        data: [
+          { id: 'a-orphan', quiz_id: QUIZ_ID, quiz: { title: 'Q' }, status: 'pending', cycle: 1, assigned_at: 'x', completed_at: null, user: null },
+          { id: 'a-ok', quiz_id: QUIZ_ID, quiz: { title: 'Q' }, status: 'pending', cycle: 1, assigned_at: 'x', completed_at: null, user: { id: 'u1', full_name: 'U1', email: 'u1@x.com', punto_de_venta: STORE_A } }
+        ],
+        error: null,
+        count: 2
+      }
+    },
+    { table: 'quiz_attempts', result: { data: [], error: null } },
+    { table: 'admins', result: { data: ADMIN_A, error: null } },
+    {
+      table: 'quiz_attempts',
+      result: {
+        data: [
+          { id: 't-orphan', quiz_id: 'q1', cycle: 1, status: 'completed', total_questions: 1, correct_count: 1, score_percent: 100, started_at: 'x', submitted_at: 'y', quiz: { id: 'q1', title: 'Q' }, user: null },
+          { id: 't-ok', quiz_id: 'q1', cycle: 1, status: 'completed', total_questions: 1, correct_count: 1, score_percent: 100, started_at: 'x', submitted_at: 'y', quiz: { id: 'q1', title: 'Q' }, user: { id: 'u1', full_name: 'U1', email: 'u1@x.com', punto_de_venta: STORE_A } }
+        ],
+        error: null,
+        count: 2
+      }
+    }
+  ])
+  const app = buildApp()
+  try {
+    const assignmentsRes = await request(app).get('/api/assignments').set('Authorization', `Bearer ${adminAToken()}`)
+    const attemptsRes = await request(app).get('/api/attempts').set('Authorization', `Bearer ${adminAToken()}`)
+
+    assert.deepEqual(assignmentsRes.body.assignments.map((a) => a.id), ['a-ok'])
+    assert.deepEqual(attemptsRes.body.attempts.map((a) => a.id), ['t-ok'])
   } finally {
     restore()
   }

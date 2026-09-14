@@ -54,6 +54,46 @@ test('GET /api/attempts — a plain admin is scoped to their own store', async (
   }
 })
 
+// The eq('user.punto_de_venta', ...) assertion above is NOT sufficient on its
+// own: PostgREST only EXCLUDES a parent row whose embed fails to match when
+// the embed is `!inner`. Drop the `!inner` and the same filter returns every
+// attempt with a nulled-out user object — the eq() assertion still passes
+// while store isolation is gone. Pin the embed syntax itself.
+test('GET /api/attempts — the store-scoped select uses an !inner user embed', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } },
+    { table: 'quiz_attempts', result: { data: [], error: null, count: 0 } }
+  ])
+  try {
+    await request(buildApp()).get('/api/attempts').set('Authorization', `Bearer ${plainAToken()}`)
+    const selectCall = restore.calls.find((c) => c.table === 'quiz_attempts' && c.method === 'select')
+    assert.match(selectCall.args[0], /user:users!inner\(/)
+  } finally {
+    restore()
+  }
+})
+
+// Defense in depth behind the !inner embed: if a row ever arrives without a
+// user, its store CANNOT be verified, so it must not be served.
+test('GET /api/attempts — a row with no user embed is dropped, not served with user:null', async () => {
+  const rows = [
+    { id: 'a1', quiz_id: 'q1', cycle: 1, status: 'completed', total_questions: 1, correct_count: 1, score_percent: 100, started_at: 'x', submitted_at: 'y', quiz: { id: 'q1', title: 'Quiz 1' }, user: null },
+    { id: 'a2', quiz_id: 'q1', cycle: 1, status: 'completed', total_questions: 1, correct_count: 1, score_percent: 100, started_at: 'x', submitted_at: 'y', quiz: { id: 'q1', title: 'Quiz 1' }, user: { id: USER_UUID, full_name: 'U1', email: 'u1@x.com', punto_de_venta: 'Cerritos' } }
+  ]
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } },
+    { table: 'quiz_attempts', result: { data: rows, error: null, count: 2 } }
+  ])
+  try {
+    const res = await request(buildApp()).get('/api/attempts').set('Authorization', `Bearer ${plainAToken()}`)
+    assert.equal(res.status, 200)
+    assert.deepEqual(res.body.attempts.map((a) => a.id), ['a2'])
+    assert.equal(res.body.attempts.some((a) => a.user === null), false)
+  } finally {
+    restore()
+  }
+})
+
 // spec: Conflicting explicit filter rejected
 test('GET /api/attempts — an explicit conflicting store filter returns 403', async () => {
   const restore = mockSupabaseSequence([
