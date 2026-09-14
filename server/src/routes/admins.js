@@ -12,6 +12,7 @@ export const adminsRouter = Router()
 
 const BCRYPT_COST = 12
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const VALID_ROLES = ['admin', 'superadmin']
 const PUNTO_DE_VENTA_ERROR = `punto_de_venta must be one of: ${PUNTOS_DE_VENTA.join(', ')}`
 
@@ -93,6 +94,22 @@ adminsRouter.patch('/:id', ...superadminOnly, async (req, res, next) => {
   if (punto_de_venta !== undefined && !PUNTOS_DE_VENTA.includes(punto_de_venta)) {
     return next(httpError(400, PUNTO_DE_VENTA_ERROR))
   }
+
+  // admins.id is a uuid column, so a malformed `:id` reaches Postgres as an
+  // UNCASTABLE literal (22P02) — NOT as PostgREST's no-rows signal — and BOTH
+  // branches below mishandled it: the RPC's error text matches neither
+  // 'admin_not_found' nor 'last_active_superadmin' and fell through to the
+  // generic `next(error)`, while the update branch's 22P02 is not PGRST116 so
+  // `isNoRowsReturned` was false and it fell through too. Either way: 500.
+  //
+  // A missing or malformed id in the URL (an unset client-side ref serialized
+  // as the literal string 'undefined', say) is a routine client mistake, not a
+  // database failure, so it answers the SAME 404 a well-formed unknown id does,
+  // with the SAME message — the guard assignments.js DELETE /:id, attempts.js
+  // GET /:id and users.js PATCH /:id already apply, on the handler that was
+  // missed. It sits after the body validation (so a malformed BODY still
+  // reports its own 400) and before every write of either branch.
+  if (!UUID_RE.test(id)) return next(httpError(404, 'Admin not found'))
 
   // Deactivating your own account logs you out instantly (requireAuth rejects
   // inactive admins) — always a footgun, so block it outright. Self-demotion

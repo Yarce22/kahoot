@@ -11,8 +11,13 @@ const { app } = await import('../src/index.js')
 const { signToken } = await import('../src/lib/jwt.js')
 const { default: request } = await import('supertest')
 
-const SUPER = { id: 'super-1', email: 'boss@example.com', role: 'superadmin', is_active: true }
-const PLAIN = { id: 'admin-2', email: 'a2@example.com', role: 'admin', is_active: true }
+// admins.id is a UUID column, so every `:id` path fixture must be UUID-shaped:
+// the PATCH handler refuses a malformed id with a 404 before it can reach
+// Postgres as an uncastable literal, so a 'super-1'-style id would make each of
+// these tests assert the guard rather than the behaviour it is named for.
+const SUPER = { id: '55555555-5555-4555-8555-555555555555', email: 'boss@example.com', role: 'superadmin', is_active: true }
+const PLAIN = { id: '66666666-6666-4666-8666-666666666666', email: 'a2@example.com', role: 'admin', is_active: true }
+const GHOST = '77777777-7777-4777-8777-777777777777'
 const STORE = 'Cerritos'
 
 const superToken = () => signToken({ sub: SUPER.id, email: SUPER.email })
@@ -284,7 +289,7 @@ test('PATCH /api/admins/:id — a failed combined PATCH leaves no partial role c
   ])
   try {
     const res = await request(app)
-      .patch('/api/admins/does-not-exist')
+      .patch(`/api/admins/${GHOST}`)
       .set('Authorization', `Bearer ${superToken()}`)
       .send({ role: 'superadmin', punto_de_venta: 'Laureles' })
 
@@ -314,7 +319,7 @@ test('PATCH /api/admins/:id — punto_de_venta-only on an unknown id maps to 404
   ])
   try {
     const res = await request(app)
-      .patch('/api/admins/does-not-exist')
+      .patch(`/api/admins/${GHOST}`)
       .set('Authorization', `Bearer ${superToken()}`)
       .send({ punto_de_venta: 'Centenario' })
     assert.equal(res.status, 404)
@@ -335,7 +340,7 @@ for (const [label, data] of [['null', null], ['an empty array', []]]) {
     ])
     try {
       const res = await request(app)
-        .patch('/api/admins/does-not-exist')
+        .patch(`/api/admins/${GHOST}`)
         .set('Authorization', `Bearer ${superToken()}`)
         .send({ role: 'admin' })
       assert.equal(res.status, 404)
@@ -403,7 +408,7 @@ test('PATCH /api/admins/:id — unknown admin id maps to 404', async () => {
   ])
   try {
     const res = await request(app)
-      .patch('/api/admins/does-not-exist')
+      .patch(`/api/admins/${GHOST}`)
       .set('Authorization', `Bearer ${superToken()}`)
       .send({ role: 'admin' })
     assert.equal(res.status, 404)
@@ -411,6 +416,46 @@ test('PATCH /api/admins/:id — unknown admin id maps to 404', async () => {
     restore()
   }
 })
+
+// admins.id is a uuid column, so a malformed `:id` reaches Postgres as an
+// UNCASTABLE literal (22P02) — NOT as PostgREST's no-rows signal — and BOTH
+// branches of this handler mishandled it. The RPC branch's error text carries
+// neither 'admin_not_found' nor 'last_active_superadmin', so it fell through to
+// the generic `next(error)`; the update branch's 22P02 is not PGRST116, so
+// `isNoRowsReturned` was false and it fell through too. Either way: 500.
+//
+// A missing or malformed id in the URL (an unset client-side ref serialized as
+// the literal string 'undefined', say) is a routine client mistake, not a
+// database failure, so it answers the SAME 404 a well-formed unknown id does,
+// with the SAME message — the sibling routes' guard (assignments.js DELETE
+// /:id, attempts.js GET /:id, users.js PATCH /:id) applied to the one handler
+// that was missed.
+for (const [label, body] of [
+  ['the RPC branch', { role: 'admin' }],
+  ['the punto_de_venta-only branch', { punto_de_venta: 'Centenario' }]
+]) {
+  test(`PATCH /api/admins/:id — a non-UUID id returns 404, not 500, before any write (${label})`, async () => {
+    for (const id of ['undefined', 'admin-2', 'null', `${GHOST}x`, '1']) {
+      const restore = mockSupabaseSequence([
+        { table: 'admins', result: { data: SUPER, error: null } } // requireAuth
+      ])
+      try {
+        const res = await request(app)
+          .patch(`/api/admins/${id}`)
+          .set('Authorization', `Bearer ${superToken()}`)
+          .send(body)
+        assert.equal(res.status, 404, id)
+        assert.equal(res.body.error, 'Admin not found', id)
+        // requireAuth's own lookup is the ONLY admins read; no write of either
+        // kind was attempted.
+        assert.equal(restore.calls.some((c) => c.method === 'rpc'), false, id)
+        assert.equal(restore.calls.some((c) => c.method === 'update'), false, id)
+      } finally {
+        restore()
+      }
+    }
+  })
+}
 
 // --- register no longer creates admins for authenticated JWTs ---
 
