@@ -569,7 +569,8 @@ test('PATCH /api/users/:id — a valid password is stored as a bcrypt hash', asy
 test('PATCH /api/users/:id — an unknown id returns 404, not 500', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
-    { table: 'users', result: { data: null, error: { message: 'no rows' } } } // target lookup miss
+    // What PostgREST actually answers when `.single()` matches no row.
+    { table: 'users', result: { data: null, error: { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' } } } // target lookup miss
   ])
   try {
     const res = await request(buildApp())
@@ -577,6 +578,29 @@ test('PATCH /api/users/:id — an unknown id returns 404, not 500', async () => 
       .set('Authorization', `Bearer ${plainAToken()}`)
       .send({ full_name: 'Renamed' })
     assert.equal(res.status, 404)
+  } finally {
+    restore()
+  }
+})
+
+// `if (error || !row)` cannot tell "no such row" apart from "the database
+// itself failed", so a connection drop or a permission error was reported to
+// the caller as a confident 404 — a lie that hides an outage behind a routine
+// answer. The write-back below the lookup already gated its 404 on PGRST116;
+// the lookup itself did not.
+test('PATCH /api/users/:id — a database failure on the target lookup is not reported as 404', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } },
+    { table: 'users', result: { data: null, error: { code: '08006', message: 'connection failure' } } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .patch('/api/users/u1')
+      .set('Authorization', `Bearer ${plainAToken()}`)
+      .send({ full_name: 'Renamed' })
+    assert.equal(res.status, 500)
+    // Nothing may be written when the target could not be verified.
+    assert.equal(restore.calls.some((c) => c.table === 'users' && c.method === 'update'), false)
   } finally {
     restore()
   }

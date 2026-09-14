@@ -440,13 +440,34 @@ test('GET /api/attempts — pages are requested from the database via range(), w
 test('GET /api/attempts/:id — an unknown id returns 404', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
-    { table: 'quiz_attempts', result: { data: null, error: { message: 'no rows' } } }
+    // What PostgREST actually answers when `.single()` matches no row.
+    { table: 'quiz_attempts', result: { data: null, error: { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' } } }
   ])
   try {
     const res = await request(buildApp())
       .get('/api/attempts/does-not-exist')
       .set('Authorization', `Bearer ${plainAToken()}`)
     assert.equal(res.status, 404)
+  } finally {
+    restore()
+  }
+})
+
+// `if (error || !row)` cannot tell "no such row" apart from "the database
+// itself failed", so a connection drop or a permission error was reported to
+// the caller as a confident 404 — a lie that hides an outage behind a routine
+// answer. Only PostgREST's no-rows signal (PGRST116) means not-found; anything
+// else must surface as the failure it is.
+test('GET /api/attempts/:id — a database failure is not reported as 404', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } },
+    { table: 'quiz_attempts', result: { data: null, error: { code: '08006', message: 'connection failure' } } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .get('/api/attempts/attempt-1')
+      .set('Authorization', `Bearer ${plainAToken()}`)
+    assert.equal(res.status, 500)
   } finally {
     restore()
   }

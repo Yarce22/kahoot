@@ -116,7 +116,8 @@ test('POST /api/assignments — a non-UUID user_id is rejected 400 before any lo
 test('POST /api/assignments — an unknown quiz returns 404', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
-    { table: 'quizzes', result: { data: null, error: { message: 'no rows' } } }
+    // What PostgREST actually answers when `.single()` matches no row.
+    { table: 'quizzes', result: { data: null, error: { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' } } }
   ])
   try {
     const res = await request(buildApp())
@@ -124,6 +125,95 @@ test('POST /api/assignments — an unknown quiz returns 404', async () => {
       .set('Authorization', `Bearer ${plainAToken()}`)
       .send({ quiz_id: QUIZ_ID, user_ids: [U1] })
     assert.equal(res.status, 404)
+  } finally {
+    restore()
+  }
+})
+
+// `if (error || !row)` cannot tell "no such row" apart from "the database
+// itself failed", so a connection drop or a permission error was reported to
+// the caller as a confident 404 — a lie that hides an outage behind a routine
+// answer. Only PostgREST's no-rows signal (PGRST116) means not-found; anything
+// else must surface as the failure it is. Every `.single()` lookup in this
+// router answers the same way.
+test('POST /api/assignments — a database failure on the quiz lookup is not reported as 404', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } },
+    { table: 'quizzes', result: { data: null, error: { code: '08006', message: 'connection failure' } } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .post('/api/assignments')
+      .set('Authorization', `Bearer ${plainAToken()}`)
+      .send({ quiz_id: QUIZ_ID, user_ids: [U1] })
+    assert.equal(res.status, 500)
+  } finally {
+    restore()
+  }
+})
+
+test('DELETE /api/assignments/:id — a database failure on the assignment lookup is not reported as 404', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } },
+    { table: 'quiz_assignments', result: { data: null, error: { code: '08006', message: 'connection failure' } } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .delete('/api/assignments/assign-1')
+      .set('Authorization', `Bearer ${plainAToken()}`)
+    assert.equal(res.status, 500)
+    assert.equal(restore.calls.some((c) => c.table === 'quiz_assignments' && c.method === 'delete'), false)
+  } finally {
+    restore()
+  }
+})
+
+test('POST /api/assignments/reactivate — a database failure on the quiz lookup is not reported as 404', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } },
+    { table: 'quizzes', result: { data: null, error: { code: '08006', message: 'connection failure' } } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .post('/api/assignments/reactivate')
+      .set('Authorization', `Bearer ${plainAToken()}`)
+      .send({ quiz_id: QUIZ_ID })
+    assert.equal(res.status, 500)
+    // The RPC bumps assignment_cycle unconditionally — it must not run when the
+    // ownership check could not even be made.
+    assert.equal(restore.calls.some((c) => c.method === 'rpc'), false)
+  } finally {
+    restore()
+  }
+})
+
+test('DELETE /api/assignments/:id — an unknown id returns 404', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } },
+    { table: 'quiz_assignments', result: { data: null, error: { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' } } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .delete('/api/assignments/does-not-exist')
+      .set('Authorization', `Bearer ${plainAToken()}`)
+    assert.equal(res.status, 404)
+  } finally {
+    restore()
+  }
+})
+
+test('POST /api/assignments/reactivate — an unknown quiz returns 404', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } },
+    { table: 'quizzes', result: { data: null, error: { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' } } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .post('/api/assignments/reactivate')
+      .set('Authorization', `Bearer ${plainAToken()}`)
+      .send({ quiz_id: QUIZ_ID })
+    assert.equal(res.status, 404)
+    assert.equal(restore.calls.some((c) => c.method === 'rpc'), false)
   } finally {
     restore()
   }

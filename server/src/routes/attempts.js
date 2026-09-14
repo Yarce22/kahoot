@@ -4,6 +4,7 @@ import { requireJwtMode } from '../middleware/jwtGate.js'
 import { requireAuth } from '../middleware/requireAuth.js'
 import { requireStoreScope, resolveStoreFilter, applyStoreFilter } from '../middleware/requireStoreScope.js'
 import { httpError } from '../lib/httpError.js'
+import { isNoRowsReturned } from '../lib/pgErrors.js'
 
 export const attemptsRouter = Router()
 
@@ -181,7 +182,12 @@ attemptsRouter.get('/:id', async (req, res, next) => {
     .eq('id', id)
     .single()
 
-  if (error || !attempt) return next(httpError(404, 'Attempt not found'))
+  // `error || !attempt` could not tell "no such attempt" apart from "the
+  // database itself failed", so a connection drop or a permission error came
+  // back as a confident 404 — an outage disguised as a routine answer. Only
+  // PostgREST's no-rows signal means not found; anything else propagates.
+  if (isNoRowsReturned(error) || (!error && !attempt)) return next(httpError(404, 'Attempt not found'))
+  if (error) return next(error)
 
   if (req.admin.role !== 'superadmin' && attempt.user?.punto_de_venta !== req.admin.punto_de_venta) {
     return next(httpError(404, 'Attempt not found'))

@@ -4,6 +4,7 @@ import { requireJwtMode } from '../middleware/jwtGate.js'
 import { requireAuth } from '../middleware/requireAuth.js'
 import { requireStoreScope, resolveStoreFilter, applyStoreFilter } from '../middleware/requireStoreScope.js'
 import { httpError } from '../lib/httpError.js'
+import { isNoRowsReturned } from '../lib/pgErrors.js'
 
 export const assignmentsRouter = Router()
 
@@ -64,7 +65,13 @@ assignmentsRouter.post('/', async (req, res, next) => {
     .eq('id', quiz_id)
     .single()
 
-  if (quizError || !quiz) return next(httpError(404, 'Quiz not found'))
+  // `quizError || !quiz` could not tell "no such quiz" apart from "the database
+  // itself failed", so a connection drop or a permission error came back as a
+  // confident 404 — an outage disguised as a routine answer. Only PostgREST's
+  // no-rows signal means not found; anything else propagates. Same contract at
+  // every `.single()` lookup in this router.
+  if (isNoRowsReturned(quizError) || (!quizError && !quiz)) return next(httpError(404, 'Quiz not found'))
+  if (quizError) return next(quizError)
   if (!isQuizOwner(req.admin, quiz)) return next(httpError(403, 'Not the quiz owner'))
   if (quiz.total_time_seconds === null) return next(httpError(409, 'QUIZ_NOT_ASSIGNABLE'))
 
@@ -239,7 +246,8 @@ assignmentsRouter.delete('/:id', async (req, res, next) => {
     .eq('id', id)
     .single()
 
-  if (error || !assignment) return next(httpError(404, 'Assignment not found'))
+  if (isNoRowsReturned(error) || (!error && !assignment)) return next(httpError(404, 'Assignment not found'))
+  if (error) return next(error)
 
   if (req.admin.role !== 'superadmin' && assignment.user?.punto_de_venta !== req.admin.punto_de_venta) {
     return next(httpError(404, 'Assignment not found'))
@@ -303,7 +311,8 @@ assignmentsRouter.post('/reactivate', async (req, res, next) => {
     .eq('id', quiz_id)
     .single()
 
-  if (quizError || !quiz) return next(httpError(404, 'Quiz not found'))
+  if (isNoRowsReturned(quizError) || (!quizError && !quiz)) return next(httpError(404, 'Quiz not found'))
+  if (quizError) return next(quizError)
   if (!isQuizOwner(req.admin, quiz)) return next(httpError(403, 'Not the quiz owner'))
 
   const { data, error } = await supabase.rpc('reactivate_quiz_assignments', {

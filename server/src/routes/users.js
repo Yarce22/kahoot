@@ -191,7 +191,12 @@ usersRouter.patch('/:id', async (req, res, next) => {
     .eq('id', id)
     .single()
 
-  if (targetError || !target) return next(httpError(404, 'User not found'))
+  // Same contract as the write-back below: `targetError || !target` could not
+  // tell "no such user" apart from "the database itself failed", so a
+  // connection drop or a permission error came back as a confident 404 — an
+  // outage disguised as a routine answer.
+  if (isNoRowsReturned(targetError) || (!targetError && !target)) return next(httpError(404, 'User not found'))
+  if (targetError) return next(targetError)
 
   if (req.admin.role !== 'superadmin' && target.punto_de_venta !== req.admin.punto_de_venta) {
     return next(httpError(404, 'User not found'))
