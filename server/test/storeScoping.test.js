@@ -57,7 +57,13 @@ test('store scoping — a non-superadmin cannot assign a quiz to a user in anoth
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: ADMIN_A, error: null } },
     { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: ADMIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
-    { table: 'users', result: { data: [{ id: 'b1111111-1111-4111-8111-111111111111', punto_de_venta: STORE_B }], error: null } }
+    // `is_active: true` is NOT decoration. assignments.js filters the resolved
+    // users on `is_active` BEFORE it applies the punto_de_venta store scope,
+    // and `undefined` is falsy — so a fixture row without this key is dropped
+    // by the soft-delete gate and never reaches the store check at all. The
+    // 404 below would then hold even with the store-scoping filter deleted
+    // outright, making this security test assert nothing about store isolation.
+    { table: 'users', result: { data: [{ id: 'b1111111-1111-4111-8111-111111111111', punto_de_venta: STORE_B, is_active: true }], error: null } }
   ])
   try {
     const res = await request(buildApp())
