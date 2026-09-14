@@ -276,6 +276,57 @@ test('GET /api/assignments — a plain admin only sees their own store', async (
   }
 })
 
+// GET / had no pagination at all, so the id set it then fed to
+// .in('assignment_id', ...) for the attempt-status lookup grew with the table.
+test('GET /api/assignments — the list is paged via range(), bounding the follow-up in() lookup', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } },
+    { table: 'quiz_assignments', result: { data: [{ id: 'a1', cycle: 1 }, { id: 'a2', cycle: 1 }], error: null, count: 5000 } },
+    { table: 'quiz_attempts', result: { data: [{ assignment_id: 'a1', cycle: 1, status: 'completed' }], error: null } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .get('/api/assignments?page=2&page_size=25')
+      .set('Authorization', `Bearer ${superToken()}`)
+    assert.equal(res.status, 200)
+    assert.equal(res.body.total, 5000)
+    assert.equal(res.body.page, 2)
+    assert.equal(res.body.page_size, 25)
+    assert.equal(res.body.assignments.length, 2)
+    assert.equal(res.body.assignments[0].attemptStatus, 'completed')
+
+    const rangeCall = restore.calls.find((c) => c.table === 'quiz_assignments' && c.method === 'range')
+    assert.deepEqual(rangeCall.args, [25, 49])
+
+    const selectCall = restore.calls.find((c) => c.table === 'quiz_assignments' && c.method === 'select')
+    assert.deepEqual(selectCall.args[1], { count: 'exact' })
+
+    // The in() fan-out can only ever carry one page worth of ids.
+    const inCall = restore.calls.find((c) => c.table === 'quiz_attempts' && c.method === 'in')
+    assert.deepEqual(inCall.args, ['assignment_id', ['a1', 'a2']])
+  } finally {
+    restore()
+  }
+})
+
+test('GET /api/assignments — page_size is capped so the in() fan-out stays bounded', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } },
+    { table: 'quiz_assignments', result: { data: [], error: null, count: 0 } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .get('/api/assignments?page_size=100000')
+      .set('Authorization', `Bearer ${superToken()}`)
+    assert.equal(res.status, 200)
+    assert.equal(res.body.page_size, 100)
+    const rangeCall = restore.calls.find((c) => c.table === 'quiz_assignments' && c.method === 'range')
+    assert.deepEqual(rangeCall.args, [0, 99])
+  } finally {
+    restore()
+  }
+})
+
 test('GET /api/assignments — a plain admin requesting another store gets 403', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } }

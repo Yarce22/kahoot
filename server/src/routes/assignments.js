@@ -8,6 +8,19 @@ import { isUniqueViolation } from '../lib/pgErrors.js'
 
 export const assignmentsRouter = Router()
 
+const DEFAULT_PAGE = 1
+const DEFAULT_PAGE_SIZE = 25
+// Doubles as the bound on the attempt-status `.in()` fan-out in GET / — the id
+// set handed to that lookup is exactly one page of assignment ids, so it can
+// never exceed this.
+const MAX_PAGE_SIZE = 100
+
+function parsePagination(query) {
+  const page = Math.max(1, parseInt(query.page, 10) || DEFAULT_PAGE)
+  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, parseInt(query.page_size, 10) || DEFAULT_PAGE_SIZE))
+  return { page, pageSize }
+}
+
 // This namespace has no legacy identity to fall back to — store scoping is
 // meaningless without a JWT admin identity (design D3/D4).
 assignmentsRouter.use(requireJwtMode, requireAuth, requireStoreScope)
@@ -109,9 +122,15 @@ assignmentsRouter.get('/', async (req, res, next) => {
     return next(err)
   }
 
+  const { page, pageSize } = parsePagination(req.query)
+  const start = (page - 1) * pageSize
+
+  // Paged server-side with `.range()` + `{ count: 'exact' }`. Beyond the usual
+  // unbounded-list concern, this list FEEDS the `.in('assignment_id', ...)`
+  // lookup below — without a page bound that fan-out grew with the table.
   let query = supabase
     .from('quiz_assignments')
-    .select('id, quiz_id, quiz:quizzes(title), status, cycle, assigned_at, completed_at, user:users!inner(id, full_name, email, punto_de_venta)')
+    .select('id, quiz_id, quiz:quizzes(title), status, cycle, assigned_at, completed_at, user:users!inner(id, full_name, email, punto_de_venta)', { count: 'exact' })
     .order('assigned_at', { ascending: false })
 
   if (req.query.quiz_id) query = query.eq('quiz_id', req.query.quiz_id)
@@ -119,7 +138,10 @@ assignmentsRouter.get('/', async (req, res, next) => {
   if (req.query.status) query = query.eq('status', req.query.status)
   query = applyStoreFilter(query, effectiveStore, 'user.punto_de_venta')
 
-  const { data: assignments, error } = await query
+  // `.range` is inclusive on both ends, hence the -1.
+  query = query.range(start, start + pageSize - 1)
+
+  const { data: assignments, error, count } = await query
   if (error) return next(error)
 
   const rows = assignments ?? []
@@ -154,7 +176,10 @@ assignmentsRouter.get('/', async (req, res, next) => {
       assignedAt: a.assigned_at,
       completedAt: a.completed_at,
       attemptStatus: attemptStatusByKey[`${a.id}:${a.cycle}`] ?? null
-    }))
+    })),
+    page,
+    page_size: pageSize,
+    total: count ?? 0
   })
 })
 

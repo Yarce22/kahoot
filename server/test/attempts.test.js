@@ -88,6 +88,33 @@ test('GET /api/attempts — filters by user_id, across quizzes', async () => {
   }
 })
 
+// Paging used to fetch the whole matching set and slice it in JS. PostgREST
+// caps a response at max-rows, so `total` was really "rows this response
+// happened to contain" and every page past the cap was unreachable.
+test('GET /api/attempts — pages are requested from the database via range(), with an exact count', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } },
+    { table: 'quiz_attempts', result: { data: [], error: null, count: 9001 } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .get('/api/attempts?page=3&page_size=25')
+      .set('Authorization', `Bearer ${superToken()}`)
+    assert.equal(res.status, 200)
+    assert.equal(res.body.total, 9001)
+    assert.equal(res.body.page, 3)
+    assert.equal(res.body.page_size, 25)
+
+    const rangeCall = restore.calls.find((c) => c.table === 'quiz_attempts' && c.method === 'range')
+    assert.deepEqual(rangeCall.args, [50, 74])
+
+    const selectCall = restore.calls.find((c) => c.table === 'quiz_attempts' && c.method === 'select')
+    assert.deepEqual(selectCall.args[1], { count: 'exact' })
+  } finally {
+    restore()
+  }
+})
+
 // --- GET /:id ---
 
 test('GET /api/attempts/:id — an unknown id returns 404', async () => {

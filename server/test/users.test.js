@@ -67,7 +67,9 @@ test('GET /api/users — a plain admin requesting another store gets 403', async
 test('GET /api/users — a superadmin sees every store when no filter is given', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: SUPER, error: null } },
-    { table: 'users', result: { data: [{ id: 'u1' }, { id: 'u2' }], error: null } }
+    // `count` is what PostgREST reports for a `{ count: 'exact' }` select —
+    // the real match total, not the length of the page returned.
+    { table: 'users', result: { data: [{ id: 'u1' }, { id: 'u2' }], error: null, count: 2 } }
   ])
   try {
     const res = await request(buildApp()).get('/api/users').set('Authorization', `Bearer ${superToken()}`)
@@ -75,6 +77,53 @@ test('GET /api/users — a superadmin sees every store when no filter is given',
     assert.equal(res.body.total, 2)
     const eqCall = restore.calls.find((c) => c.table === 'users' && c.method === 'eq')
     assert.equal(eqCall, undefined)
+  } finally {
+    restore()
+  }
+})
+
+// Paging used to fetch the whole matching set and slice it in JS. PostgREST
+// caps a response at max-rows, so `total` was really "rows this response
+// happened to contain" and every page past the cap was unreachable.
+test('GET /api/users — pages are requested from the database via range(), with an exact count', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } },
+    { table: 'users', result: { data: [{ id: 'u51' }, { id: 'u52' }], error: null, count: 4310 } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .get('/api/users?page=3&page_size=25')
+      .set('Authorization', `Bearer ${superToken()}`)
+    assert.equal(res.status, 200)
+    // `total` is the DB's count, NOT data.length — the whole point of the fix.
+    assert.equal(res.body.total, 4310)
+    assert.equal(res.body.page, 3)
+    assert.equal(res.body.page_size, 25)
+    assert.equal(res.body.users.length, 2)
+
+    const rangeCall = restore.calls.find((c) => c.table === 'users' && c.method === 'range')
+    assert.deepEqual(rangeCall.args, [50, 74])
+
+    const selectCall = restore.calls.find((c) => c.table === 'users' && c.method === 'select')
+    assert.deepEqual(selectCall.args[1], { count: 'exact' })
+  } finally {
+    restore()
+  }
+})
+
+test('GET /api/users — a page beyond the PostgREST row cap is still reachable', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } },
+    { table: 'users', result: { data: [{ id: 'u2001' }], error: null, count: 4310 } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .get('/api/users?page=41&page_size=50')
+      .set('Authorization', `Bearer ${superToken()}`)
+    assert.equal(res.status, 200)
+    assert.equal(res.body.users.length, 1)
+    const rangeCall = restore.calls.find((c) => c.table === 'users' && c.method === 'range')
+    assert.deepEqual(rangeCall.args, [2000, 2049])
   } finally {
     restore()
   }

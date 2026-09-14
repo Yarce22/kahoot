@@ -54,9 +54,17 @@ attemptsRouter.get('/', async (req, res, next) => {
     return next(err)
   }
 
+  const { page, pageSize } = parsePagination(req.query)
+  const start = (page - 1) * pageSize
+
+  // Paged server-side with `.range()` + `{ count: 'exact' }`: the previous
+  // "fetch everything, then slice in JS" approach silently inherited
+  // PostgREST's max-rows cap, so `total` reported the size of the truncated
+  // response rather than the real match count, and every page past the cap was
+  // unreachable no matter what `page` the caller asked for.
   let query = supabase
     .from('quiz_attempts')
-    .select('id, quiz_id, cycle, status, total_questions, correct_count, score_percent, started_at, submitted_at, quiz:quizzes(id, title), user:users!inner(id, full_name, email, punto_de_venta)')
+    .select('id, quiz_id, cycle, status, total_questions, correct_count, score_percent, started_at, submitted_at, quiz:quizzes(id, title), user:users!inner(id, full_name, email, punto_de_venta)', { count: 'exact' })
     .order('started_at', { ascending: false })
 
   if (req.query.quiz_id) query = query.eq('quiz_id', req.query.quiz_id)
@@ -65,18 +73,17 @@ attemptsRouter.get('/', async (req, res, next) => {
   if (req.query.cycle !== undefined) query = query.eq('cycle', Number(req.query.cycle))
   query = applyStoreFilter(query, effectiveStore, 'user.punto_de_venta')
 
-  const { data, error } = await query
+  // `.range` is inclusive on both ends, hence the -1.
+  query = query.range(start, start + pageSize - 1)
+
+  const { data, error, count } = await query
   if (error) return next(error)
 
-  const all = data ?? []
-  const { page, pageSize } = parsePagination(req.query)
-  const start = (page - 1) * pageSize
-
   res.json({
-    attempts: all.slice(start, start + pageSize).map(serializeAttemptRow),
+    attempts: (data ?? []).map(serializeAttemptRow),
     page,
     page_size: pageSize,
-    total: all.length
+    total: count ?? 0
   })
 })
 

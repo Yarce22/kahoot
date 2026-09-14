@@ -29,10 +29,11 @@ function parsePagination(query) {
 }
 
 // GET /api/users — store-scoped usuario list (spec: Non-superadmin Read
-// Scoping). Filtered/paged in application code rather than via supabase's
-// `.range()` — the same "fetch the matching set, then page" approach this
-// codebase already uses (routes/quizzes.js has no server-side pagination
-// either); acceptable for this internal tool's per-store row counts.
+// Scoping). Paged server-side with `.range()` + `{ count: 'exact' }`: the
+// previous "fetch everything, then slice in JS" approach silently inherited
+// PostgREST's max-rows cap, so `total` reported the size of the truncated
+// response rather than the real match count, and every page past the cap was
+// unreachable no matter what `page` the caller asked for.
 usersRouter.get('/', async (req, res, next) => {
   let effectiveStore
   try {
@@ -45,26 +46,28 @@ usersRouter.get('/', async (req, res, next) => {
     return next(err)
   }
 
+  const { page, pageSize } = parsePagination(req.query)
+  const start = (page - 1) * pageSize
+
   let query = supabase
     .from('users')
-    .select('id, email, full_name, punto_de_venta, is_active, created_at')
+    .select('id, email, full_name, punto_de_venta, is_active, created_at', { count: 'exact' })
     .order('created_at', { ascending: false })
 
   query = applyStoreFilter(query, effectiveStore)
   if (req.query.is_active !== undefined) query = query.eq('is_active', req.query.is_active === 'true')
 
-  const { data, error } = await query
+  // `.range` is inclusive on both ends, hence the -1.
+  query = query.range(start, start + pageSize - 1)
+
+  const { data, error, count } = await query
   if (error) return next(error)
 
-  const all = data ?? []
-  const { page, pageSize } = parsePagination(req.query)
-  const start = (page - 1) * pageSize
-
   res.json({
-    users: all.slice(start, start + pageSize),
+    users: data ?? [],
     page,
     page_size: pageSize,
-    total: all.length
+    total: count ?? 0
   })
 })
 

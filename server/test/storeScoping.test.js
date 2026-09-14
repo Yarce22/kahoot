@@ -105,7 +105,9 @@ test('store scoping — users, assignments and attempts lists are ALL filtered t
 test('store scoping — a superadmin\'s list requests carry NO forced store filter', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: SUPER, error: null } },
-    { table: 'users', result: { data: [{ id: 'u1' }, { id: 'u2' }], error: null } }
+    // `count` is what PostgREST reports for a `{ count: 'exact' }` select —
+    // the real match total, not the length of the page returned.
+    { table: 'users', result: { data: [{ id: 'u1' }, { id: 'u2' }], error: null, count: 2 } }
   ])
   try {
     const res = await request(buildApp()).get('/api/users').set('Authorization', `Bearer ${superToken()}`)
