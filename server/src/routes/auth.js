@@ -80,7 +80,11 @@ authRouter.post('/login', async (req, res, next) => {
     return next(httpError(401, 'Invalid email or password'))
   }
 
-  const token = signToken({ sub: admin.id, email: admin.email })
+  // aud is explicit (not left to signToken's default) so this call site
+  // reads correctly on its own and stays correct even if the default ever
+  // changes — admin login must always issue an admin-audience token
+  // (spec: Audience-Separated JWT Issuance).
+  const token = signToken({ sub: admin.id, email: admin.email, aud: 'admin' })
 
   res.json({ token, admin: { id: admin.id, email: admin.email, role: admin.role } })
 })

@@ -253,9 +253,10 @@ CREATE TABLE quiz_attempt_answers (
 
 CREATE INDEX idx_quiz_attempt_answers_attempt ON quiz_attempt_answers(attempt_id);
 
--- Reactivation, atomically (see migration 009). Bumping the quiz high-water
--- mark and re-cycling its assignments are two statements and supabase-js has
--- no client-side transaction, so they live in one advisory-locked function.
+-- Reactivation, atomically (see migrations 009 and 012). Bumping the quiz
+-- high-water mark and re-cycling its assignments are two statements and
+-- supabase-js has no client-side transaction, so they live in one
+-- advisory-locked function.
 -- scope_punto_de_venta NULL = superadmin (every assignment on the quiz); a
 -- value = that store only (defense-in-depth re-filter for non-superadmins).
 CREATE OR REPLACE FUNCTION reactivate_quiz_assignments(
@@ -292,6 +293,13 @@ BEGIN
      AND a.quiz_id = target_quiz_id
      AND (target_user_ids IS NULL OR a.user_id = ANY(target_user_ids))
      AND (scope_punto_de_venta IS NULL OR u.punto_de_venta = scope_punto_de_venta)
+     -- is_active = false is this table's soft-delete. A deactivated usuario
+     -- cannot log in, so re-opening their assignment creates a row that can
+     -- never be completed — the same reason POST /api/assignments refuses to
+     -- create one. Not a scoping rule, so it binds a superadmin too. The rule
+     -- lives here rather than in the route because an omitted user_ids means
+     -- "every assignment on the quiz": the route names no users to filter.
+     AND u.is_active
   RETURNING a.id, a.cycle;
 END;
 $$;

@@ -7,16 +7,25 @@ import { httpError } from '../lib/httpError.js'
 
 export const quizzesRouter = Router()
 
+// isValidTotalTimeSeconds — shared by POST/PUT: null (quiz not assignable
+// async — migration 009) or an integer in [60, 7200] (matches the
+// quizzes_total_time_seconds_check CHECK constraint).
+function isValidTotalTimeSeconds(value) {
+  return value === null || (Number.isInteger(value) && value >= 60 && value <= 7200)
+}
+const TOTAL_TIME_SECONDS_ERROR = 'total_time_seconds must be null or an integer between 60 and 7200'
+
 // POST /api/quizzes — create quiz.
 // Ownership (owner_id) is mandatory after migration 002:
 //   - AUTH_MODE=jwt: owner_id = req.admin.id (the authenticated admin)
 //   - AUTH_MODE=legacy: owner_id = the bootstrap admin (single lookup),
 //     since legacy requests carry no JWT identity.
 quizzesRouter.post('/', requireAdmin, authGate, async (req, res, next) => {
-  const { title, description } = req.body
+  const { title, description, total_time_seconds = null } = req.body
 
   if (!title) return next(httpError(400, 'title is required'))
   if (title.length > 200) return next(httpError(400, 'title must be 200 characters or fewer'))
+  if (!isValidTotalTimeSeconds(total_time_seconds)) return next(httpError(400, TOTAL_TIME_SECONDS_ERROR))
 
   let ownerId
   try {
@@ -27,7 +36,7 @@ quizzesRouter.post('/', requireAdmin, authGate, async (req, res, next) => {
 
   const { data, error } = await supabase
     .from('quizzes')
-    .insert({ title, description: description ?? null, owner_id: ownerId })
+    .insert({ title, description: description ?? null, owner_id: ownerId, total_time_seconds })
     .select('id')
     .single()
 
@@ -75,7 +84,7 @@ quizzesRouter.get('/:id', requireAdmin, authGate, ownerGate(), async (req, res, 
 
   const { data: quiz, error: quizError } = await supabase
     .from('quizzes')
-    .select('id, title, description')
+    .select('id, title, description, total_time_seconds')
     .eq('id', id)
     .single()
 
@@ -149,7 +158,7 @@ quizzesRouter.get('/:id/sessions', requireAdmin, authGate, ownerGate(), async (r
 // PUT /api/quizzes/:id — update quiz
 quizzesRouter.put('/:id', requireAdmin, authGate, ownerGate(), async (req, res, next) => {
   const { id } = req.params
-  const { title, description } = req.body
+  const { title, description, total_time_seconds } = req.body
 
   const updates = {}
   if (title !== undefined) {
@@ -157,12 +166,16 @@ quizzesRouter.put('/:id', requireAdmin, authGate, ownerGate(), async (req, res, 
     updates.title = title
   }
   if (description !== undefined) updates.description = description
+  if (total_time_seconds !== undefined) {
+    if (!isValidTotalTimeSeconds(total_time_seconds)) return next(httpError(400, TOTAL_TIME_SECONDS_ERROR))
+    updates.total_time_seconds = total_time_seconds
+  }
 
   const { data, error } = await supabase
     .from('quizzes')
     .update(updates)
     .eq('id', id)
-    .select('id, title, description, created_at')
+    .select('id, title, description, total_time_seconds, created_at')
     .single()
 
   if (error || !data) return next(httpError(404, 'Quiz not found'))
