@@ -48,6 +48,17 @@ assignmentsRouter.post('/', async (req, res, next) => {
   const { quiz_id, user_ids } = req.body ?? {}
 
   if (!quiz_id) return next(httpError(400, 'quiz_id is required'))
+  // UUID-shaped, not merely truthy — the same contract user_ids below and the
+  // GET / filters already enforce. `.eq('id', quiz_id)` filters a uuid column,
+  // so 'abc' reaches Postgres as an uncastable literal (22P02) and surfaces as
+  // an uncontrolled 500 instead of a 400.
+  //
+  // The ARRAY case is the reason this check cannot live any later: supabase-js
+  // STRINGIFIES an array handed to `.eq()`, so `{ quiz_id: ['<real-uuid>'] }`
+  // passed the quiz lookup AND the ownership check below, then landed verbatim
+  // in the upsert rows as an array where PostgREST expects a scalar uuid —
+  // failing only at the WRITE, after authorization had already been granted.
+  if (!isUuid(quiz_id)) return next(httpError(400, 'quiz_id must be a UUID'))
   if (!Array.isArray(user_ids) || user_ids.length === 0) {
     return next(httpError(400, 'user_ids must be a non-empty array'))
   }
@@ -133,9 +144,11 @@ assignmentsRouter.post('/', async (req, res, next) => {
   // yields fewer returned rows, anything else yields `error`. Built from the
   // VERIFIED rows, never the raw request body — only ids that survived the
   // existence and store checks above can ever be written (and a duplicated id
-  // collapses to one row for free).
+  // collapses to one row for free). quiz_id comes from `quiz.id` — the row the
+  // ownership check above actually passed on, and the value Postgres holds
+  // canonically — rather than from the raw body, for the same reason.
   const rows = visibleUsers.map(({ id: userId }) => ({
-    quiz_id,
+    quiz_id: quiz.id,
     user_id: userId,
     cycle: quiz.assignment_cycle,
     assigned_by: req.admin.id
@@ -320,6 +333,12 @@ assignmentsRouter.post('/reactivate', async (req, res, next) => {
   const { quiz_id, user_ids } = req.body ?? {}
 
   if (!quiz_id) return next(httpError(400, 'quiz_id is required'))
+  // Same contract POST / enforces: `.eq('id', quiz_id)` filters a uuid column,
+  // so a non-UUID value reaches Postgres as an uncastable literal (22P02) and
+  // surfaces as an uncontrolled 500 instead of a 400. Checked here, with the
+  // other body-shape validations, so it lands before the lookup and therefore
+  // long before the RPC — which bumps assignment_cycle unconditionally.
+  if (!isUuid(quiz_id)) return next(httpError(400, 'quiz_id must be a UUID'))
 
   // user_ids stays OPTIONAL (omitted/null = every assignment on the quiz),
   // but when supplied it must be a non-empty array of UUIDs — the same

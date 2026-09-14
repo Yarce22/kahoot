@@ -45,7 +45,9 @@ const ADMIN_A = { id: 'admin-a', email: 'a@example.com', role: 'admin', is_activ
 const superToken = () => signToken({ sub: SUPER.id, email: SUPER.email })
 const adminAToken = () => signToken({ sub: ADMIN_A.id, email: ADMIN_A.email })
 
-const QUIZ_ID = 'quiz-1'
+// quizzes.id is a UUID column — the assignment routes reject a non-UUID
+// quiz_id as a 400 before the lookup, exactly as Postgres would reject it.
+const QUIZ_ID = 'aabbccdd-5555-4555-8555-eeff55555555'
 
 // --- cross-store assignment returns 404 ---
 
@@ -54,7 +56,7 @@ const QUIZ_ID = 'quiz-1'
 test('store scoping — a non-superadmin cannot assign a quiz to a user in another store (404, nothing created)', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: ADMIN_A, error: null } },
-    { table: 'quizzes', result: { data: { owner_id: ADMIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: ADMIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
     { table: 'users', result: { data: [{ id: 'b1111111-1111-4111-8111-111111111111', punto_de_venta: STORE_B }], error: null } }
   ])
   try {
@@ -240,7 +242,7 @@ test('store scoping — an empty punto_de_venta param scopes a non-superadmin to
 test('store scoping — a non-superadmin\'s reactivate call is always scoped to their own store', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: ADMIN_A, error: null } },
-    { table: 'quizzes', result: { data: { owner_id: ADMIN_A.id }, error: null } },
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: ADMIN_A.id }, error: null } },
     // The RPC itself only reports the rows IT touched — store B's rows
     // (created earlier by a superadmin) are excluded by its own scoping,
     // so only one row comes back even though the quiz has cross-store data.
@@ -267,7 +269,7 @@ test('store scoping — a non-superadmin\'s reactivate call is always scoped to 
 test('store scoping — a superadmin\'s reactivate call is unrestricted (scope_punto_de_venta null) and can affect both stores', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: SUPER, error: null } },
-    { table: 'quizzes', result: { data: { owner_id: ADMIN_A.id }, error: null } },
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: ADMIN_A.id }, error: null } },
     { rpc: 'reactivate_quiz_assignments', result: { data: [{ assignment_id: 'assign-a1', new_cycle: 2 }, { assignment_id: 'assign-b1', new_cycle: 2 }], error: null } }
   ])
   try {

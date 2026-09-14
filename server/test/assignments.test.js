@@ -32,7 +32,12 @@ const PLAIN_A = { id: 'admin-a', email: 'a@example.com', role: 'admin', is_activ
 const superToken = () => signToken({ sub: SUPER.id, email: SUPER.email })
 const plainAToken = () => signToken({ sub: PLAIN_A.id, email: PLAIN_A.email })
 
-const QUIZ_ID = 'quiz-1'
+// quizzes.id is a UUID column, so quiz_id must be UUID-SHAPED in every fixture
+// for the same reason user_ids are: 'quiz-1' reaches Postgres as an uncastable
+// literal (22P02) and surfaces as an uncontrolled 500 rather than a 400.
+// Hex LETTERS are deliberate: the upsert test below upper-cases this value to
+// prove the written row carries the quiz's canonical id, not the caller's.
+const QUIZ_ID = 'aabbccdd-5555-4555-8555-eeff55555555'
 
 // user_ids filter a UUID column, so they must be UUID-SHAPED in every fixture:
 // a value like 'u1' reaches Postgres as an uncastable literal (22P02) and
@@ -80,6 +85,35 @@ test('POST /api/assignments — missing quiz_id returns 400', async () => {
     assert.equal(res.status, 400)
   } finally {
     restore()
+  }
+})
+
+// quiz_id was only ever checked for TRUTHINESS, unlike user_ids in the same
+// handler. `.eq('id', quiz_id)` filters a uuid column, so 'abc' reached
+// Postgres as an uncastable literal (22P02) and surfaced as an uncontrolled
+// 500 instead of a 400.
+//
+// The ARRAY case is worse than a plain 500: supabase-js STRINGIFIES an array
+// handed to `.eq()`, so `{ quiz_id: ['<real-uuid>'] }` could pass the quiz
+// lookup AND the ownership check, and then get written verbatim into the
+// upsert rows as `quiz_id: [...]` — an array where PostgREST expects a scalar
+// uuid. The request failed only at the WRITE step, after authorization had
+// already been granted.
+test('POST /api/assignments — a non-UUID quiz_id is rejected 400 before any lookup', async () => {
+  for (const quiz_id of ['abc', 123, `${QUIZ_ID}x`, '  ', true, { id: QUIZ_ID }, [QUIZ_ID], [QUIZ_ID, U1]]) {
+    const restore = mockSupabaseSequence([
+      { table: 'admins', result: { data: PLAIN_A, error: null } }
+    ])
+    try {
+      const res = await request(buildApp())
+        .post('/api/assignments')
+        .set('Authorization', `Bearer ${plainAToken()}`)
+        .send({ quiz_id, user_ids: [U1] })
+      assert.equal(res.status, 400, JSON.stringify(quiz_id))
+      assert.equal(restore.calls.some((c) => c.table === 'quizzes' || c.table === 'users'), false, JSON.stringify(quiz_id))
+    } finally {
+      restore()
+    }
   }
 })
 
@@ -147,7 +181,7 @@ test('POST /api/assignments — exactly the page cap worth of user_ids is accept
   const user_ids = Array.from({ length: 100 }, (_, i) => `11111111-1111-4111-8111-${String(i).padStart(12, '0')}`)
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
-    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
     { table: 'users', result: { data: user_ids.map((id) => ({ id, punto_de_venta: 'Cerritos', is_active: true })), error: null } },
     { table: 'quiz_assignments', result: { data: user_ids.map((id, i) => ({ id: `assign-${i}`, user_id: id })), error: null } }
   ])
@@ -299,7 +333,7 @@ test('POST /api/assignments/reactivate — an unknown quiz returns 404', async (
 test('POST /api/assignments — a non-owner admin gets 403', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
-    { table: 'quizzes', result: { data: { owner_id: 'someone-else', total_time_seconds: 600, assignment_cycle: 1 }, error: null } }
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: 'someone-else', total_time_seconds: 600, assignment_cycle: 1 }, error: null } }
   ])
   try {
     const res = await request(buildApp())
@@ -321,7 +355,7 @@ test('POST /api/assignments — a non-owner admin gets 403', async () => {
 test('POST /api/assignments — a cross-store target is rejected 404, nothing inserted', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
-    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
     { table: 'users', result: { data: [{ id: U1, punto_de_venta: 'Cerritos', is_active: true }, { id: U2, punto_de_venta: 'Campestre', is_active: true }], error: null } }
   ])
   try {
@@ -343,7 +377,7 @@ test('POST /api/assignments — a real cross-store id and a nonexistent id are i
   for (const users of [[{ id: U2, punto_de_venta: 'Campestre', is_active: true }], []]) {
     const restore = mockSupabaseSequence([
       { table: 'admins', result: { data: PLAIN_A, error: null } },
-      { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
+      { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
       { table: 'users', result: { data: users, error: null } }
     ])
     try {
@@ -366,7 +400,7 @@ test('POST /api/assignments — a real cross-store id and a nonexistent id are i
 test('POST /api/assignments — an id that matches no user is rejected 404, nothing inserted', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
-    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
     { table: 'users', result: { data: [], error: null } }
   ])
   try {
@@ -391,7 +425,7 @@ test('POST /api/assignments — an id that matches no user is rejected 404, noth
 test('POST /api/assignments — an inactive target user is rejected 404, nothing inserted', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
-    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
     { table: 'users', result: { data: [{ id: U1, punto_de_venta: 'Cerritos', is_active: false }], error: null } }
   ])
   try {
@@ -411,7 +445,7 @@ test('POST /api/assignments — an inactive target user is rejected 404, nothing
 test('POST /api/assignments — an inactive target user is rejected for a superadmin too', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: SUPER, error: null } },
-    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
     { table: 'users', result: { data: [{ id: U2, punto_de_venta: 'Campestre', is_active: false }], error: null } }
   ])
   try {
@@ -433,7 +467,7 @@ test('POST /api/assignments — a deactivated id and a nonexistent id are indist
   for (const users of [[{ id: U1, punto_de_venta: 'Cerritos', is_active: false }], []]) {
     const restore = mockSupabaseSequence([
       { table: 'admins', result: { data: PLAIN_A, error: null } },
-      { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
+      { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
       { table: 'users', result: { data: users, error: null } }
     ])
     try {
@@ -455,7 +489,7 @@ test('POST /api/assignments — a deactivated id and a nonexistent id are indist
 test('POST /api/assignments — the target lookup selects is_active', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
-    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
     { table: 'users', result: { data: [{ id: U1, punto_de_venta: 'Cerritos', is_active: true }], error: null } },
     { table: 'quiz_assignments', result: { data: [{ id: 'assign-1', user_id: U1 }], error: null } }
   ])
@@ -474,7 +508,7 @@ test('POST /api/assignments — the target lookup selects is_active', async () =
 test('POST /api/assignments — a real id mixed with an unknown id inserts NOTHING (all-or-nothing)', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
-    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
     { table: 'users', result: { data: [{ id: U1, punto_de_venta: 'Cerritos', is_active: true }], error: null } }
   ])
   try {
@@ -494,7 +528,7 @@ test('POST /api/assignments — a real id mixed with an unknown id inserts NOTHI
 test('POST /api/assignments — a duplicated user_id produces exactly one row', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
-    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
     { table: 'users', result: { data: [{ id: U1, punto_de_venta: 'Cerritos', is_active: true }], error: null } },
     { table: 'quiz_assignments', result: { data: [{ id: 'assign-1', user_id: U1 }], error: null } }
   ])
@@ -520,7 +554,7 @@ test('POST /api/assignments — a duplicated user_id produces exactly one row', 
 test('POST /api/assignments — the batch is ONE conflict-tolerant statement, not a per-row loop', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
-    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 4 }, error: null } },
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 4 }, error: null } },
     { table: 'users', result: { data: [{ id: U1, punto_de_venta: 'Cerritos', is_active: true }, { id: U2, punto_de_venta: 'Cerritos', is_active: true }], error: null } },
     { table: 'quiz_assignments', result: { data: [{ id: 'assign-1', user_id: U1 }, { id: 'assign-2', user_id: U2 }], error: null } }
   ])
@@ -554,7 +588,7 @@ test('POST /api/assignments — the batch is ONE conflict-tolerant statement, no
 test('POST /api/assignments — a non-conflict database error commits nothing and surfaces as an error', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
-    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
     { table: 'users', result: { data: [{ id: U1, punto_de_venta: 'Cerritos', is_active: true }, { id: U2, punto_de_venta: 'Cerritos', is_active: true }], error: null } },
     { table: 'quiz_assignments', result: { data: null, error: { code: '23503', message: 'insert or update violates foreign key constraint' } } }
   ])
@@ -575,7 +609,7 @@ test('POST /api/assignments — a non-conflict database error commits nothing an
 test('POST /api/assignments — a superadmin can assign a cross-store user', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: SUPER, error: null } },
-    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
     { table: 'users', result: { data: [{ id: U2, punto_de_venta: 'Campestre', is_active: true }], error: null } },
     { table: 'quiz_assignments', result: { data: [{ id: 'assign-1', user_id: U2 }], error: null } }
   ])
@@ -594,7 +628,7 @@ test('POST /api/assignments — a superadmin can assign a cross-store user', asy
 test('POST /api/assignments — a quiz with no total_time_seconds returns 409 QUIZ_NOT_ASSIGNABLE', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
-    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: null, assignment_cycle: 1 }, error: null } }
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: PLAIN_A.id, total_time_seconds: null, assignment_cycle: 1 }, error: null } }
   ])
   try {
     const res = await request(buildApp())
@@ -611,7 +645,7 @@ test('POST /api/assignments — a quiz with no total_time_seconds returns 409 QU
 test('POST /api/assignments — same-store assignment succeeds and seeds cycle from the quiz', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
-    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 3 }, error: null } },
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 3 }, error: null } },
     { table: 'users', result: { data: [{ id: U1, punto_de_venta: 'Cerritos', is_active: true }], error: null } },
     { table: 'quiz_assignments', result: { data: [{ id: 'assign-1', user_id: U1 }], error: null } }
   ])
@@ -630,6 +664,32 @@ test('POST /api/assignments — same-store assignment succeeds and seeds cycle f
   }
 })
 
+// cycle and assigned_by already came from verified sources, but quiz_id was
+// copied straight out of the REQUEST BODY even though the handler is holding
+// the quizzes row it just fetched and authorized. Postgres stores a uuid
+// canonically (lowercase), so an upper-cased quiz_id — a perfectly valid uuid
+// literal — wrote a value that differs textually from the quiz's own id.
+// Build the row from quiz.id, the value the ownership check actually passed on.
+test('POST /api/assignments — the upsert rows carry the verified quiz.id, not the raw body value', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } },
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
+    { table: 'users', result: { data: [{ id: U1, punto_de_venta: 'Cerritos', is_active: true }], error: null } },
+    { table: 'quiz_assignments', result: { data: [{ id: A1, user_id: U1 }], error: null } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .post('/api/assignments')
+      .set('Authorization', `Bearer ${plainAToken()}`)
+      .send({ quiz_id: QUIZ_ID.toUpperCase(), user_ids: [U1] })
+    assert.equal(res.status, 201)
+    const upsert = restore.calls.find((c) => c.table === 'quiz_assignments' && c.method === 'upsert')
+    assert.equal(upsert.args[0][0].quiz_id, QUIZ_ID)
+  } finally {
+    restore()
+  }
+})
+
 // ignoreDuplicates makes Postgres SKIP a conflicting row silently — it comes
 // back neither in the result set nor as an error. "Skipped" is therefore
 // computed by diffing the verified target ids against the ids the upsert
@@ -637,7 +697,7 @@ test('POST /api/assignments — same-store assignment succeeds and seeds cycle f
 test('POST /api/assignments — an already-assigned user is skipped, not a hard failure', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
-    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
     { table: 'users', result: { data: [{ id: U1, punto_de_venta: 'Cerritos', is_active: true }, { id: U2, punto_de_venta: 'Cerritos', is_active: true }], error: null } },
     { table: 'quiz_assignments', result: { data: [{ id: 'assign-1', user_id: U1 }], error: null } }
   ])
@@ -922,7 +982,7 @@ test('DELETE /api/assignments/:id — an unattempted, in-scope assignment is rem
 test('POST /api/assignments/reactivate — a non-superadmin scopes the RPC to their own store', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
-    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id }, error: null } },
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: PLAIN_A.id }, error: null } },
     { rpc: 'reactivate_quiz_assignments', result: { data: [{ assignment_id: 'assign-1', new_cycle: 2 }], error: null } }
   ])
   try {
@@ -942,7 +1002,7 @@ test('POST /api/assignments/reactivate — a non-superadmin scopes the RPC to th
 test('POST /api/assignments/reactivate — a superadmin scopes the RPC to every store (null)', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: SUPER, error: null } },
-    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id }, error: null } },
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: PLAIN_A.id }, error: null } },
     { rpc: 'reactivate_quiz_assignments', result: { data: [{ assignment_id: 'assign-1', new_cycle: 2 }, { assignment_id: 'assign-2', new_cycle: 2 }], error: null } }
   ])
   try {
@@ -962,7 +1022,7 @@ test('POST /api/assignments/reactivate — a superadmin scopes the RPC to every 
 test('POST /api/assignments/reactivate — the RPC\'s quiz_not_found exception maps to 404', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
-    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id }, error: null } },
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: PLAIN_A.id }, error: null } },
     { rpc: 'reactivate_quiz_assignments', result: { data: null, error: { message: 'quiz_not_found' } } }
   ])
   try {
@@ -998,10 +1058,34 @@ test('POST /api/assignments/reactivate — an invalid user_ids is rejected 400 b
   }
 })
 
+// The same truthiness-only check POST / carried: `.eq('id', quiz_id)` filters
+// a uuid column, so a non-UUID value reached Postgres as an uncastable literal
+// (22P02) and surfaced as an uncontrolled 500 instead of a 400. Rejected before
+// the lookup — and therefore long before the RPC, which bumps the quiz's
+// assignment_cycle unconditionally.
+test('POST /api/assignments/reactivate — a non-UUID quiz_id is rejected 400 before any lookup', async () => {
+  for (const quiz_id of ['abc', 123, `${QUIZ_ID}x`, '  ', true, { id: QUIZ_ID }, [QUIZ_ID], [QUIZ_ID, U1]]) {
+    const restore = mockSupabaseSequence([
+      { table: 'admins', result: { data: PLAIN_A, error: null } }
+    ])
+    try {
+      const res = await request(buildApp())
+        .post('/api/assignments/reactivate')
+        .set('Authorization', `Bearer ${plainAToken()}`)
+        .send({ quiz_id })
+      assert.equal(res.status, 400, JSON.stringify(quiz_id))
+      assert.equal(restore.calls.some((c) => c.table === 'quizzes'), false, JSON.stringify(quiz_id))
+      assert.equal(restore.calls.some((c) => c.method === 'rpc'), false, JSON.stringify(quiz_id))
+    } finally {
+      restore()
+    }
+  }
+})
+
 test('POST /api/assignments/reactivate — an omitted user_ids still means "every assignment" (null)', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
-    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id }, error: null } },
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: PLAIN_A.id }, error: null } },
     { rpc: 'reactivate_quiz_assignments', result: { data: [{ assignment_id: 'assign-1', new_cycle: 2 }], error: null } }
   ])
   try {
@@ -1023,7 +1107,7 @@ test('POST /api/assignments/reactivate — an omitted user_ids still means "ever
 test('POST /api/assignments/reactivate — a zero-match run reports the real, already-bumped cycle', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
-    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id }, error: null } },
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: PLAIN_A.id }, error: null } },
     { rpc: 'reactivate_quiz_assignments', result: { data: [], error: null } },
     { table: 'quizzes', result: { data: { assignment_cycle: 7 }, error: null } }
   ])
@@ -1042,7 +1126,7 @@ test('POST /api/assignments/reactivate — a zero-match run reports the real, al
 test('POST /api/assignments/reactivate — a non-owner admin gets 403', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
-    { table: 'quizzes', result: { data: { owner_id: 'someone-else' }, error: null } }
+    { table: 'quizzes', result: { data: { id: QUIZ_ID, owner_id: 'someone-else' }, error: null } }
   ])
   try {
     const res = await request(buildApp())
