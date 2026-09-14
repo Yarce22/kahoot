@@ -142,7 +142,33 @@ test('POST /api/users — punto_de_venta omitted defaults to the caller\'s own s
     assert.equal(res.body.punto_de_venta, 'Cerritos')
     const insert = restore.calls.find((c) => c.table === 'users' && c.method === 'insert')
     assert.equal(insert.args[0].punto_de_venta, 'Cerritos')
-    assert.notEqual(insert.args[0].password, 'pw123456') // stored as a hash, not plaintext
+    // Asserted on `password_hash` — the key the route actually writes. The
+    // previous assertion named `password`, a key that never exists on the
+    // payload, so `undefined !== 'pw123456'` passed no matter what was stored.
+    const storedHash = insert.args[0].password_hash
+    assert.equal(typeof storedHash, 'string')
+    assert.notEqual(storedHash, 'pw123456') // never the plaintext
+    assert.match(storedHash, /^\$2[aby]\$/) // bcrypt hash shape
+  } finally {
+    restore()
+  }
+})
+
+// Guards the assertion above against silently going tautological again: a
+// payload key named `password` must NOT exist, because asserting on it would
+// be vacuously true.
+test('POST /api/users — the insert payload carries no plaintext `password` key', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } },
+    { table: 'users', result: { data: { id: 'new-1', email: 'n@x.com', full_name: 'N', punto_de_venta: 'Cerritos', is_active: true }, error: null } }
+  ])
+  try {
+    await request(buildApp())
+      .post('/api/users')
+      .set('Authorization', `Bearer ${plainAToken()}`)
+      .send({ email: 'n@x.com', password: 'pw123456', full_name: 'N' })
+    const insert = restore.calls.find((c) => c.table === 'users' && c.method === 'insert')
+    assert.equal(Object.prototype.hasOwnProperty.call(insert.args[0], 'password'), false)
   } finally {
     restore()
   }
