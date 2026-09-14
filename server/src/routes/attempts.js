@@ -19,6 +19,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // Accepts the two shapes the client actually sends: a bare calendar day
 // (YYYY-MM-DD, what an <input type="date"> submits) and a full ISO datetime.
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?)?$/
+const INTEGER_RE = /^-?\d+$/
 
 // This namespace has no legacy identity to fall back to — store scoping is
 // meaningless without a JWT admin identity (design D3/D4).
@@ -80,13 +81,14 @@ attemptsRouter.get('/', async (req, res, next) => {
 
   let cycle
   if (req.query.cycle !== undefined) {
-    cycle = Number(req.query.cycle)
-    // Number('') is 0 and Number('abc') is NaN — Number.isInteger rejects the
-    // latter, and the explicit emptiness check rejects the former, which would
-    // otherwise silently become a filter for cycle 0.
-    if (req.query.cycle === '' || !Number.isInteger(cycle)) {
+    // Number() is far too forgiving to be the gate on its own: it reads '' AND
+    // any whitespace-only string as 0, so `?cycle=%20` silently became a filter
+    // for cycle 0, and it also accepts '0x10'/'1e3', which are not integer
+    // literals. Match the literal shape FIRST, then convert.
+    if (typeof req.query.cycle !== 'string' || !INTEGER_RE.test(req.query.cycle)) {
       return next(httpError(400, 'cycle must be an integer'))
     }
+    cycle = Number(req.query.cycle)
   }
 
   // from/to bound started_at (route contract). Date.parse alone is NOT a

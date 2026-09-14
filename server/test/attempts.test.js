@@ -160,6 +160,15 @@ test('GET /api/attempts — an invalid filter value returns 400 instead of reach
     'cycle=abc',
     'cycle=1.5',
     'cycle=',
+    // Number('   ') is 0 and Number.isInteger(0) is true, so a whitespace-only
+    // cycle silently became a filter for cycle 0 instead of a 400.
+    'cycle=%20',
+    'cycle=%09',
+    'cycle=%20%20',
+    // Number() also reads these shapes, none of which is an integer literal.
+    'cycle=0x10',
+    'cycle=1e3',
+    `cycle=${encodeURIComponent(' 3 ')}`,
     'quiz_id=not-a-uuid',
     `user_id=${USER_UUID}x`,
     'status=bogus',
