@@ -23,19 +23,27 @@ const PUNTO_DE_VENTA_ERROR = `punto_de_venta must be one of: ${PUNTOS_DE_VENTA.j
 usersRouter.use(requireJwtMode, requireAuth, requireStoreScope)
 
 // buildSearchFilter — renders `q` into a PostgREST `or` expression matching
-// either name or email. Two layers of neutralization, applied IN ORDER, because
-// the value lands inside a filter STRING, not a bound parameter:
-//   1. `%` and `_` are LIKE metacharacters, and PostgREST additionally treats
-//      `*` as an alias for `%` inside a like/ilike pattern — so a bare `%` or a
-//      bare `*` turns the search into "match everything". They are ESCAPED with
-//      `\` (Postgres LIKE's DEFAULT escape character, so no ESCAPE clause is
-//      needed and PostgREST not exposing one does not matter), never deleted:
-//      deleting `_` silently broke a legitimate search for `john_doe`. `\`
-//      itself is escaped here too, so a user-typed backslash cannot smuggle in
-//      an escape sequence of its own. Postgres matches `\<char>` literally for
-//      ANY char, so this is safe for `*` as well; the only illegal form is a
-//      pattern ENDING in the escape character, which cannot happen because the
-//      term is always followed by the trailing `%`.
+// either name or email.
+//
+// The operator is `imatch` (Postgres `~*`), NOT `ilike`, and that choice is
+// load-bearing. PostgREST rewrites EVERY `*` inside a like/ilike value into
+// `%` — its documented URL-friendly alias for the LIKE wildcard — before
+// Postgres ever sees the pattern, and it does so with no awareness of any
+// escaping applied to the value. A user-typed `*` escaped as `\*` therefore
+// arrived as `\%`, which LIKE reads as a literal PERCENT SIGN: searching for
+// `*` quietly returned the rows containing `%`. No escaping can survive that
+// rewrite either, because nothing maps back INTO `*` — a literal asterisk is
+// simply not expressible in a like/ilike value. `~*` is handed its pattern
+// verbatim, which puts every metacharacter back under this function's control.
+//
+// Two layers of neutralization, applied IN ORDER, because the value lands
+// inside a filter STRING, not a bound parameter:
+//   1. Every POSIX-regex metacharacter is escaped with `\`, so the term can
+//      only ever match ITSELF. `%` and `_` need no special handling anymore —
+//      neither is special to a regex — which is what makes `john_doe` and
+//      `100%` honest literal searches. `\` is escaped here too, so a
+//      user-typed backslash cannot smuggle in an escape sequence of its own.
+//      `~*` is an UNANCHORED substring match, so ilike's `%…%` wrapper is gone.
 //   2. `,` separates the two branches of `or` and `"` terminates a quoted
 //      value, so the term is wrapped in quotes with `\` and `"` escaped —
 //      otherwise the search box could rewrite the filter expression itself.
@@ -46,9 +54,9 @@ function buildSearchFilter(q) {
   if (typeof q !== 'string') return null
   const term = q.trim()
   if (term.length === 0) return null
-  const wildcardSafe = term.replace(/[\\%_*]/g, (c) => `\\${c}`)
-  const escaped = wildcardSafe.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-  return `full_name.ilike."%${escaped}%",email.ilike."%${escaped}%"`
+  const literal = term.replace(/[\\^$.|?*+()[\]{}]/g, (c) => `\\${c}`)
+  const escaped = literal.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  return `full_name.imatch."${escaped}",email.imatch."${escaped}"`
 }
 
 function parsePagination(query) {

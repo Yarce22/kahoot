@@ -32,6 +32,65 @@ const PLAIN_A = { id: 'admin-a', email: 'a@example.com', role: 'admin', is_activ
 const superToken = () => signToken({ sub: SUPER.id, email: SUPER.email })
 const plainAToken = () => signToken({ sub: PLAIN_A.id, email: PLAIN_A.email })
 
+// --- search-filter pipeline model ---
+//
+// There is no live database in this suite, so "does this search MATCH that
+// row" is answered by modelling the rewrites the emitted filter still goes
+// through before it reaches data:
+//   1. PostgREST unescapes the quoted value (`\X` -> `X`).
+//   2. For a like/ilike value ONLY, PostgREST rewrites EVERY `*` into `%` —
+//      its documented URL-friendly alias for the LIKE wildcard — with no
+//      awareness of a backslash in front of it. A regex operator (match/imatch)
+//      receives its pattern verbatim.
+//   3. Postgres applies the result: LIKE is anchored with `%`/`_` wildcards and
+//      `\` escapes, `~*` is an unanchored case-insensitive regex.
+// Step 2 is why an escaped `\*` used to arrive as `\%` — a literal PERCENT
+// SIGN — and nothing at all maps back to `*`, so no like/ilike escaping can
+// express a literal asterisk.
+const escapeRegExpChar = (c) => c.replace(/[\\^$.|?*+()[\]{}]/g, (m) => `\\${m}`)
+
+function matchesSearchFilter(orFilter, value) {
+  const branch = /^full_name\.(\w+)\."((?:[^"\\]|\\.)*)"/.exec(orFilter)
+  assert.ok(branch, `unrecognized search filter: ${orFilter}`)
+  const [, op, quoted] = branch
+  const unescaped = quoted.replace(/\\(.)/g, '$1')
+  const pattern = op === 'like' || op === 'ilike' ? unescaped.replace(/\*/g, '%') : unescaped
+
+  if (op === 'match' || op === 'imatch') {
+    return new RegExp(pattern, op === 'imatch' ? 'i' : '').test(value)
+  }
+
+  let rx = '^'
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i]
+    if (c === '\\') {
+      i += 1
+      rx += escapeRegExpChar(pattern[i] ?? '\\')
+      continue
+    }
+    if (c === '%') { rx += '[\\s\\S]*'; continue }
+    if (c === '_') { rx += '[\\s\\S]'; continue }
+    rx += escapeRegExpChar(c)
+  }
+  return new RegExp(`${rx}$`, op === 'ilike' ? 'i' : '').test(value)
+}
+
+async function emittedSearchFilter(q) {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } },
+    { table: 'users', result: { data: [], error: null, count: 0 } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .get(`/api/users?q=${encodeURIComponent(q)}`)
+      .set('Authorization', `Bearer ${superToken()}`)
+    assert.equal(res.status, 200, q)
+    return restore.calls.find((c) => c.table === 'users' && c.method === 'or').args[0]
+  } finally {
+    restore()
+  }
+}
+
 // --- audience ---
 
 // Every other token helper in this suite relies on signToken's default
@@ -168,7 +227,10 @@ test('GET /api/users — q searches full_name and email with a single OR filter'
       .set('Authorization', `Bearer ${superToken()}`)
     assert.equal(res.status, 200)
     const orCall = restore.calls.find((c) => c.table === 'users' && c.method === 'or')
-    assert.deepEqual(orCall.args, ['full_name.ilike."%ana%",email.ilike."%ana%"'])
+    // `imatch` (Postgres `~*`) rather than `ilike`: an unanchored regex is the
+    // same substring search, minus PostgREST's `*` -> `%` rewrite of like/ilike
+    // values, which made a literal asterisk impossible to express.
+    assert.deepEqual(orCall.args, ['full_name.imatch."ana",email.imatch."ana"'])
   } finally {
     restore()
   }
@@ -188,25 +250,25 @@ test('GET /api/users — q escapes the characters that delimit PostgREST or() sy
       .set('Authorization', `Bearer ${superToken()}`)
     assert.equal(res.status, 200)
     const orCall = restore.calls.find((c) => c.table === 'users' && c.method === 'or')
-    assert.deepEqual(orCall.args, ['full_name.ilike."%a,b\\"c%",email.ilike."%a,b\\"c%"'])
+    assert.deepEqual(orCall.args, ['full_name.imatch."a,b\\"c",email.imatch."a,b\\"c"'])
   } finally {
     restore()
   }
 })
 
-// %, _ and * are all "match anything" metacharacters once the value reaches
-// PostgREST (`*` is PostgREST's own alias for `%` in a like/ilike pattern), so
-// a bare one of them would turn the search into "match everything". They are
-// ESCAPED, not deleted: `\` is Postgres LIKE's default escape character, and a
-// deleted `_` silently broke a legitimate search for `john_doe`. The doubled
-// backslash is the PostgREST quoted-value layer — it collapses back to a single
+// Under `~*` the wildcard problem inverts: `%` and `_` are ordinary characters
+// to a regex and need no escaping at all, while the regex metacharacters —
+// `*` among them — are escaped so the term can only match itself. The doubled
+// backslash is the PostgREST quoted-value layer; it collapses back to a single
 // `\` before Postgres sees the pattern.
-test('GET /api/users — q escapes LIKE wildcard metacharacters instead of deleting them', async () => {
+test('GET /api/users — q escapes regex metacharacters and leaves LIKE wildcards literal', async () => {
   const cases = [
-    ['a%b_c', 'a\\\\%b\\\\_c'],
+    ['a%b_c', 'a%b_c'],
     ['*', '\\\\*'],
-    ['john_doe', 'john\\\\_doe'],
-    ['100%', '100\\\\%']
+    ['john_doe', 'john_doe'],
+    ['100%', '100%'],
+    ['a.b', 'a\\\\.b'],
+    ['(x)', '\\\\(x\\\\)']
   ]
   for (const [q, expected] of cases) {
     const restore = mockSupabaseSequence([
@@ -219,15 +281,47 @@ test('GET /api/users — q escapes LIKE wildcard metacharacters instead of delet
         .set('Authorization', `Bearer ${superToken()}`)
       assert.equal(res.status, 200, q)
       const orCall = restore.calls.find((c) => c.table === 'users' && c.method === 'or')
-      assert.deepEqual(orCall.args, [`full_name.ilike."%${expected}%",email.ilike."%${expected}%"`], q)
+      assert.deepEqual(orCall.args, [`full_name.imatch."${expected}",email.imatch."${expected}"`], q)
     } finally {
       restore()
     }
   }
 })
 
-// A wildcard-only term is a LITERAL search now, not an empty one: `%%` looks
-// for the two-character string "%%", so a filter must still be applied.
+// The escaping is only worth anything if the term matches ITSELF. A `*` is the
+// case that used to fail silently: escaping it as `\*` was undone by
+// PostgREST's unconditional `*` -> `%` rewrite of like/ilike values, so the
+// pattern that reached Postgres asked for a literal PERCENT SIGN and a search
+// for `*` returned the rows containing `%` instead.
+test('GET /api/users — a q containing * matches a literal asterisk, not a percent sign', async () => {
+  const starFilter = await emittedSearchFilter('Ana *')
+  assert.equal(matchesSearchFilter(starFilter, 'Ana * Beta'), true)
+  assert.equal(matchesSearchFilter(starFilter, 'Ana % Beta'), false)
+
+  // ...and the mirror case still holds: `%` finds `%`, not `*`.
+  const percentFilter = await emittedSearchFilter('Ana %')
+  assert.equal(matchesSearchFilter(percentFilter, 'Ana % Beta'), true)
+  assert.equal(matchesSearchFilter(percentFilter, 'Ana * Beta'), false)
+})
+
+// The other metacharacters must stay literal too, and a plain term must not
+// become a wildcard: `_` matches an underscore, not "any character".
+test('GET /api/users — wildcard metacharacters in q match themselves, never anything else', async () => {
+  const underscore = await emittedSearchFilter('john_doe')
+  assert.equal(matchesSearchFilter(underscore, 'john_doe'), true)
+  assert.equal(matchesSearchFilter(underscore, 'johnXdoe'), false)
+
+  const percent = await emittedSearchFilter('100%')
+  assert.equal(matchesSearchFilter(percent, 'a 100% score'), true)
+  assert.equal(matchesSearchFilter(percent, 'a 100 score'), false)
+
+  // A bare wildcard must not degrade into "match everything".
+  const bare = await emittedSearchFilter('%')
+  assert.equal(matchesSearchFilter(bare, 'Ana'), false)
+})
+
+// A wildcard-only term is a LITERAL search, not an empty one: `%%` looks for
+// the two-character string "%%", so a filter must still be applied.
 test('GET /api/users — a wildcard-only q searches for it literally rather than matching everything', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: SUPER, error: null } },
@@ -239,7 +333,7 @@ test('GET /api/users — a wildcard-only q searches for it literally rather than
       .set('Authorization', `Bearer ${superToken()}`)
     assert.equal(res.status, 200)
     const orCall = restore.calls.find((c) => c.table === 'users' && c.method === 'or')
-    assert.deepEqual(orCall.args, ['full_name.ilike."%\\\\%\\\\%%",email.ilike."%\\\\%\\\\%%"'])
+    assert.deepEqual(orCall.args, ['full_name.imatch."%%",email.imatch."%%"'])
   } finally {
     restore()
   }
