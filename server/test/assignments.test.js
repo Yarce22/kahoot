@@ -34,6 +34,25 @@ const plainAToken = () => signToken({ sub: PLAIN_A.id, email: PLAIN_A.email })
 
 const QUIZ_ID = 'quiz-1'
 
+// --- audience ---
+
+// Every other token helper in this suite relies on signToken's default
+// aud:'admin', so nothing exercised the one rejection requireAuth performs
+// manually: a VALID, correctly-signed token minted by usuario login must not
+// open an admin router.
+test('GET /api/assignments — a usuario-audience token is rejected 401', async () => {
+  const restore = mockSupabaseSequence([])
+  try {
+    const token = signToken({ sub: 'user-1', email: 'u@example.com', aud: 'usuario' })
+    const res = await request(buildApp()).get('/api/assignments').set('Authorization', `Bearer ${token}`)
+    assert.equal(res.status, 401)
+    // Rejected before any database work — the admins lookup never runs.
+    assert.deepEqual(restore.calls, [])
+  } finally {
+    restore()
+  }
+})
+
 // --- POST / ---
 
 test('POST /api/assignments — missing quiz_id returns 400', async () => {
