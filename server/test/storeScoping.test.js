@@ -47,9 +47,11 @@ const adminAToken = () => signToken({ sub: ADMIN_A.id, email: ADMIN_A.email })
 
 const QUIZ_ID = 'quiz-1'
 
-// --- cross-store assignment returns 403 ---
+// --- cross-store assignment returns 404 ---
 
-test('store scoping — a non-superadmin cannot assign a quiz to a user in another store (403, nothing created)', async () => {
+// 404, not a distinct 403: D9 forbids confirming that a user id in ANOTHER
+// store exists. See the indistinguishability test in assignments.test.js.
+test('store scoping — a non-superadmin cannot assign a quiz to a user in another store (404, nothing created)', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: ADMIN_A, error: null } },
     { table: 'quizzes', result: { data: { owner_id: ADMIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
@@ -61,9 +63,8 @@ test('store scoping — a non-superadmin cannot assign a quiz to a user in anoth
       .set('Authorization', `Bearer ${adminAToken()}`)
       .send({ quiz_id: QUIZ_ID, user_ids: ['b1111111-1111-4111-8111-111111111111'] })
 
-    assert.equal(res.status, 403)
-    assert.equal(res.body.error, 'CROSS_STORE_ASSIGNMENT_FORBIDDEN')
-    assert.equal(restore.calls.some((c) => c.table === 'quiz_assignments' && c.method === 'insert'), false)
+    assert.equal(res.status, 404)
+    assert.equal(restore.calls.some((c) => c.table === 'quiz_assignments'), false)
   } finally {
     restore()
   }

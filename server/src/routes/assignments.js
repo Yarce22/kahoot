@@ -78,19 +78,26 @@ assignmentsRouter.post('/', async (req, res, next) => {
 
   const resolvedUsers = targetUsers ?? []
 
-  // Every requested id MUST resolve to a row before anything is checked or
-  // written. Without this, an id that matched no user was invisible to the
-  // store guard below (which only inspects what the DB returned) yet still
-  // reached the insert loop — a cross-store check bypassed by a typo, and,
-  // because the inserts are per-row, rows committed before the eventual FK
-  // failure stayed committed.
-  if (resolvedUsers.length !== new Set(user_ids).size) {
-    return next(httpError(404, 'One or more user_ids do not exist'))
-  }
+  // Store scoping is applied BEFORE the existence check, not after it, and
+  // both failures collapse into the SAME 404 (spec: Same-Store-Only
+  // Assignment, all-or-nothing). Reporting a distinct 403 for "this id lives
+  // in another store" turned the endpoint into an existence oracle: a plain
+  // admin could probe arbitrary UUIDs and learn which ones are real users in
+  // stores they cannot otherwise see — precisely what D9 forbids, and what
+  // DELETE /:id below and PATCH /api/users/:id already avoid by answering 404
+  // for an out-of-store row. A superadmin has no cross-store boundary to hide,
+  // so for them this is purely the existence check.
+  //
+  // Every requested id MUST resolve to a VISIBLE row before anything is
+  // written. Without that, an id that matched no user was invisible to the
+  // store guard (which only inspects what the DB returned) yet still reached
+  // the write — a cross-store check bypassed by a typo.
+  const visibleUsers = req.admin.role === 'superadmin'
+    ? resolvedUsers
+    : resolvedUsers.filter((u) => u.punto_de_venta === req.admin.punto_de_venta)
 
-  if (req.admin.role !== 'superadmin') {
-    const hasCrossStoreTarget = resolvedUsers.some((u) => u.punto_de_venta !== req.admin.punto_de_venta)
-    if (hasCrossStoreTarget) return next(httpError(403, 'CROSS_STORE_ASSIGNMENT_FORBIDDEN'))
+  if (visibleUsers.length !== new Set(user_ids).size) {
+    return next(httpError(404, 'One or more user_ids do not exist'))
   }
 
   const created = []
@@ -102,7 +109,7 @@ assignmentsRouter.post('/', async (req, res, next) => {
   // Iterates the VERIFIED rows, never the raw request body — only ids that
   // survived the existence and store checks above can ever be written (and a
   // duplicated id collapses to one insert for free).
-  for (const { id: userId } of resolvedUsers) {
+  for (const { id: userId } of visibleUsers) {
     const { data: row, error } = await supabase
       .from('quiz_assignments')
       .insert({ quiz_id, user_id: userId, cycle: quiz.assignment_cycle, assigned_by: req.admin.id })

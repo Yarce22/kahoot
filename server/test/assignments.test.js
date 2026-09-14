@@ -145,8 +145,13 @@ test('POST /api/assignments — a non-owner admin gets 403', async () => {
   }
 })
 
-// spec: Cross-store assignment rejected — all-or-nothing, no row created
-test('POST /api/assignments — a cross-store target is rejected 403 CROSS_STORE_ASSIGNMENT_FORBIDDEN, nothing inserted', async () => {
+// spec: Cross-store assignment rejected — all-or-nothing, no row created.
+// D9 decides WHICH rejection: a distinct 403 for "this id belongs to another
+// store" versus 404 for "this id does not exist" is an existence oracle — a
+// plain admin could probe arbitrary UUIDs and learn which ones are real users
+// in stores they cannot otherwise see. DELETE /:id and PATCH /api/users/:id
+// already collapse both cases into the same 404; POST / must too.
+test('POST /api/assignments — a cross-store target is rejected 404, nothing inserted', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
     { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
@@ -157,12 +162,35 @@ test('POST /api/assignments — a cross-store target is rejected 403 CROSS_STORE
       .post('/api/assignments')
       .set('Authorization', `Bearer ${plainAToken()}`)
       .send({ quiz_id: QUIZ_ID, user_ids: [U1, U2] })
-    assert.equal(res.status, 403)
-    assert.equal(res.body.error, 'CROSS_STORE_ASSIGNMENT_FORBIDDEN')
-    assert.equal(restore.calls.some((c) => c.table === 'quiz_assignments' && c.method === 'insert'), false)
+    assert.equal(res.status, 404)
+    assert.equal(restore.calls.some((c) => c.table === 'quiz_assignments'), false)
   } finally {
     restore()
   }
+})
+
+// The oracle, stated directly: probing a REAL id in another store and probing
+// a made-up id must be byte-for-byte indistinguishable to a non-superadmin.
+test('POST /api/assignments — a real cross-store id and a nonexistent id are indistinguishable to a plain admin', async () => {
+  const responses = []
+  for (const users of [[{ id: U2, punto_de_venta: 'Campestre' }], []]) {
+    const restore = mockSupabaseSequence([
+      { table: 'admins', result: { data: PLAIN_A, error: null } },
+      { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
+      { table: 'users', result: { data: users, error: null } }
+    ])
+    try {
+      const res = await request(buildApp())
+        .post('/api/assignments')
+        .set('Authorization', `Bearer ${plainAToken()}`)
+        .send({ quiz_id: QUIZ_ID, user_ids: [U2] })
+      responses.push({ status: res.status, body: res.body })
+    } finally {
+      restore()
+    }
+  }
+  assert.equal(responses[0].status, 404)
+  assert.deepEqual(responses[0], responses[1])
 })
 
 // The store guard inspected the users the DB RETURNED, but the insert loop
