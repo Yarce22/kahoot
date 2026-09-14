@@ -51,6 +51,14 @@ assignmentsRouter.post('/', async (req, res, next) => {
   if (!Array.isArray(user_ids) || user_ids.length === 0) {
     return next(httpError(400, 'user_ids must be a non-empty array'))
   }
+  // Bounded by the same page cap the rest of this router uses, and bounded
+  // BEFORE the round trip: user_ids feeds `.in('id', user_ids)`, which
+  // supabase-js renders as a GET query STRING, so a few hundred UUIDs blow
+  // past gateway/PostgREST URL length limits and come back as an uncontrolled
+  // 500 instead of a controlled 400.
+  if (user_ids.length > MAX_PAGE_SIZE) {
+    return next(httpError(400, `user_ids must not exceed ${MAX_PAGE_SIZE} items`))
+  }
   // UUID-shaped, not merely "a non-empty string": user_ids filter a uuid
   // column, so 'not-a-uuid' reaches Postgres as an uncastable literal (22P02)
   // and surfaces as an uncontrolled 500 instead of a 400. Same contract the

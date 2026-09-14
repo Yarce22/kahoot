@@ -113,6 +113,50 @@ test('POST /api/assignments — a non-UUID user_id is rejected 400 before any lo
   }
 })
 
+// user_ids feeds `.in('id', user_ids)`, which supabase-js renders as a GET
+// query STRING — a few hundred UUIDs blow past gateway/PostgREST URL length
+// limits and come back as an uncontrolled 500. Bounded to the same page cap
+// the rest of this router uses, and bounded BEFORE the round trip so the
+// oversized request never leaves the process.
+test('POST /api/assignments — a user_ids array beyond the page cap is rejected 400 before any lookup', async () => {
+  const user_ids = Array.from({ length: 101 }, (_, i) => `11111111-1111-4111-8111-${String(i).padStart(12, '0')}`)
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .post('/api/assignments')
+      .set('Authorization', `Bearer ${plainAToken()}`)
+      .send({ quiz_id: QUIZ_ID, user_ids })
+    assert.equal(res.status, 400)
+    assert.match(res.body.error, /100/)
+    assert.equal(restore.calls.some((c) => c.table === 'quizzes' || c.table === 'users'), false)
+  } finally {
+    restore()
+  }
+})
+
+// The cap itself is a valid request — the boundary is inclusive.
+test('POST /api/assignments — exactly the page cap worth of user_ids is accepted', async () => {
+  const user_ids = Array.from({ length: 100 }, (_, i) => `11111111-1111-4111-8111-${String(i).padStart(12, '0')}`)
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } },
+    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
+    { table: 'users', result: { data: user_ids.map((id) => ({ id, punto_de_venta: 'Cerritos' })), error: null } },
+    { table: 'quiz_assignments', result: { data: user_ids.map((id, i) => ({ id: `assign-${i}`, user_id: id })), error: null } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .post('/api/assignments')
+      .set('Authorization', `Bearer ${plainAToken()}`)
+      .send({ quiz_id: QUIZ_ID, user_ids })
+    assert.equal(res.status, 201)
+    assert.equal(res.body.created.length, 100)
+  } finally {
+    restore()
+  }
+})
+
 test('POST /api/assignments — an unknown quiz returns 404', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
