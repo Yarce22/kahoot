@@ -11,8 +11,14 @@ const { app } = await import('../src/index.js')
 const { signToken } = await import('../src/lib/jwt.js')
 const { default: request } = await import('supertest')
 
-const SUPER = { id: 'super-1', email: 'boss@example.com', role: 'superadmin', is_active: true }
-const PLAIN = { id: 'admin-2', email: 'a2@example.com', role: 'admin', is_active: true }
+// admins.id is a UUID column, so every `:id` path fixture must be UUID-shaped:
+// the PATCH handler refuses a malformed id with a 404 before it can reach
+// Postgres as an uncastable literal, so a 'super-1'-style id would make each of
+// these tests assert the guard rather than the behaviour it is named for.
+const SUPER = { id: '55555555-5555-4555-8555-555555555555', email: 'boss@example.com', role: 'superadmin', is_active: true }
+const PLAIN = { id: '66666666-6666-4666-8666-666666666666', email: 'a2@example.com', role: 'admin', is_active: true }
+const GHOST = '77777777-7777-4777-8777-777777777777'
+const STORE = 'Cerritos'
 
 const superToken = () => signToken({ sub: SUPER.id, email: SUPER.email })
 const plainToken = () => signToken({ sub: PLAIN.id, email: PLAIN.email })
@@ -46,22 +52,94 @@ test('GET /api/admins — a superadmin gets the admin list', async () => {
   }
 })
 
+// A superadmin cannot perform the manual backfill migration 010 demands
+// without first SEEING which admins still lack a store.
+test('GET /api/admins — the list read selects punto_de_venta', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } }, // requireAuth
+    { table: 'admins', result: { data: [], error: null } }     // list
+  ])
+  try {
+    const res = await request(app).get('/api/admins').set('Authorization', `Bearer ${superToken()}`)
+    assert.equal(res.status, 200)
+    const listSelect = restore.calls.filter((c) => c.table === 'admins' && c.method === 'select').at(-1)
+    assert.match(listSelect.args[0], /\bpunto_de_venta\b/)
+  } finally {
+    restore()
+  }
+})
+
 // --- create ---
 
 test('POST /api/admins — superadmin creates an admin with a role', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: SUPER, error: null } },                                   // requireAuth
     { table: 'admins', result: { data: null, error: { message: 'no rows' } } },                  // pre-check
-    { table: 'admins', result: { data: { id: 'new-1', email: 'n@x.com', role: 'admin', is_active: true }, error: null } } // insert
+    { table: 'admins', result: { data: { id: 'new-1', email: 'n@x.com', role: 'admin', is_active: true, punto_de_venta: STORE }, error: null } } // insert
+  ])
+  try {
+    const res = await request(app)
+      .post('/api/admins')
+      .set('Authorization', `Bearer ${superToken()}`)
+      .send({ email: 'n@x.com', password: 'pw12345', role: 'admin', punto_de_venta: STORE })
+    assert.equal(res.status, 201)
+    assert.equal(res.body.email, 'n@x.com')
+    assert.equal(res.body.role, 'admin')
+  } finally {
+    restore()
+  }
+})
+
+// admins.punto_de_venta is NOT NULL as of migration 010 and has no default —
+// an insert that omits it is a guaranteed runtime failure, so the API must
+// demand it up front.
+test('POST /api/admins — punto_de_venta is required (400), and nothing is inserted', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } } // requireAuth
   ])
   try {
     const res = await request(app)
       .post('/api/admins')
       .set('Authorization', `Bearer ${superToken()}`)
       .send({ email: 'n@x.com', password: 'pw12345', role: 'admin' })
+    assert.equal(res.status, 400)
+    assert.equal(restore.calls.filter((c) => c.method === 'insert').length, 0)
+  } finally {
+    restore()
+  }
+})
+
+test('POST /api/admins — a punto_de_venta outside the allowlist is rejected (400)', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } } // requireAuth
+  ])
+  try {
+    const res = await request(app)
+      .post('/api/admins')
+      .set('Authorization', `Bearer ${superToken()}`)
+      .send({ email: 'n@x.com', password: 'pw12345', punto_de_venta: 'Narnia' })
+    assert.equal(res.status, 400)
+    assert.equal(restore.calls.filter((c) => c.method === 'insert').length, 0)
+  } finally {
+    restore()
+  }
+})
+
+test('POST /api/admins — persists punto_de_venta and returns it', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } },                  // requireAuth
+    { table: 'admins', result: { data: null, error: { message: 'no rows' } } }, // pre-check
+    { table: 'admins', result: { data: { id: 'new-1', email: 'n@x.com', role: 'admin', is_active: true, punto_de_venta: 'Laureles' }, error: null } } // insert
+  ])
+  try {
+    const res = await request(app)
+      .post('/api/admins')
+      .set('Authorization', `Bearer ${superToken()}`)
+      .send({ email: 'n@x.com', password: 'pw12345', punto_de_venta: 'Laureles' })
     assert.equal(res.status, 201)
-    assert.equal(res.body.email, 'n@x.com')
-    assert.equal(res.body.role, 'admin')
+    assert.equal(res.body.punto_de_venta, 'Laureles')
+    const insert = restore.calls.find((c) => c.method === 'insert')
+    assert.equal(insert.args[0].punto_de_venta, 'Laureles')
   } finally {
     restore()
   }
@@ -119,6 +197,178 @@ test('PATCH /api/admins/:id — promotes a plain admin to superadmin', async () 
   }
 })
 
+// The backfill PATCH: migration 010 refuses to run while any admin row still
+// has punto_de_venta NULL, and this endpoint is the only way an operator can
+// assign those stores through the API.
+test('PATCH /api/admins/:id — assigns punto_de_venta to an existing admin', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } }, // requireAuth
+    { table: 'admins', result: { data: { id: PLAIN.id, email: PLAIN.email, role: 'admin', is_active: true, punto_de_venta: 'Centenario' }, error: null } } // update
+  ])
+  try {
+    const res = await request(app)
+      .patch(`/api/admins/${PLAIN.id}`)
+      .set('Authorization', `Bearer ${superToken()}`)
+      .send({ punto_de_venta: 'Centenario' })
+    assert.equal(res.status, 200)
+    assert.equal(res.body.punto_de_venta, 'Centenario')
+    const update = restore.calls.find((c) => c.table === 'admins' && c.method === 'update')
+    assert.deepEqual(update.args[0], { punto_de_venta: 'Centenario' })
+    // `.at(-1)`: the FIRST eq('id', ...) belongs to requireAuth's own lookup.
+    const filter = restore.calls.filter((c) => c.table === 'admins' && c.method === 'eq' && c.args[0] === 'id').at(-1)
+    assert.equal(filter.args[1], PLAIN.id)
+  } finally {
+    restore()
+  }
+})
+
+test('PATCH /api/admins/:id — a punto_de_venta outside the allowlist is rejected (400)', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } } // requireAuth
+  ])
+  try {
+    const res = await request(app)
+      .patch(`/api/admins/${PLAIN.id}`)
+      .set('Authorization', `Bearer ${superToken()}`)
+      .send({ punto_de_venta: 'Narnia' })
+    assert.equal(res.status, 400)
+    assert.equal(restore.calls.filter((c) => c.method === 'update').length, 0)
+  } finally {
+    restore()
+  }
+})
+
+// --- atomicity of a combined role/status + punto_de_venta PATCH ---
+//
+// Running the RPC and then a separate `.update({ punto_de_venta })` made the
+// role/status change durably committed before the second write was even
+// attempted: if that second write failed, the caller saw a total failure while
+// the role had silently changed. Everything must travel in the ONE
+// advisory-locked transaction (migration 011).
+
+test('PATCH /api/admins/:id — role + punto_de_venta travel in a single write', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } }, // requireAuth
+    {
+      rpc: 'update_admin_role_status',
+      result: {
+        data: { id: PLAIN.id, email: PLAIN.email, password_hash: 'secret-hash', role: 'superadmin', is_active: true, punto_de_venta: 'Laureles' },
+        error: null
+      }
+    }
+  ])
+  try {
+    const res = await request(app)
+      .patch(`/api/admins/${PLAIN.id}`)
+      .set('Authorization', `Bearer ${superToken()}`)
+      .send({ role: 'superadmin', punto_de_venta: 'Laureles' })
+
+    assert.equal(res.status, 200)
+    assert.equal(res.body.role, 'superadmin')
+    assert.equal(res.body.punto_de_venta, 'Laureles')
+
+    // Exactly one write, and it carries every field.
+    const writes = restore.calls.filter((c) => c.method === 'rpc' || c.method === 'update')
+    assert.equal(writes.length, 1)
+    assert.equal(writes[0].method, 'rpc')
+    assert.deepEqual(writes[0].args[0], {
+      target_id: PLAIN.id,
+      new_role: 'superadmin',
+      new_active: null,
+      new_punto_de_venta: 'Laureles'
+    })
+  } finally {
+    restore()
+  }
+})
+
+test('PATCH /api/admins/:id — a failed combined PATCH leaves no partial role change behind', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } }, // requireAuth
+    { rpc: 'update_admin_role_status', result: { data: null, error: { message: 'admin_not_found' } } }
+  ])
+  try {
+    const res = await request(app)
+      .patch(`/api/admins/${GHOST}`)
+      .set('Authorization', `Bearer ${superToken()}`)
+      .send({ role: 'superadmin', punto_de_venta: 'Laureles' })
+
+    assert.equal(res.status, 404)
+    // The single transaction rolled back as a whole: no second write was ever
+    // issued, so there is no committed role change to leave dangling.
+    assert.equal(restore.calls.filter((c) => c.method === 'update').length, 0)
+    assert.equal(restore.calls.filter((c) => c.method === 'rpc').length, 1)
+  } finally {
+    restore()
+  }
+})
+
+// PostgREST resolves `.single()` over zero rows as an ERROR (PGRST116), not as
+// `{ data: null, error: null }` — so the `if (!row)` 404 branch was dead code
+// and an unknown id leaked a raw 500 with the Postgres message in it.
+test('PATCH /api/admins/:id — punto_de_venta-only on an unknown id maps to 404, not 500', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } }, // requireAuth
+    {
+      table: 'admins',
+      result: {
+        data: null,
+        error: { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' }
+      }
+    } // update matched no row
+  ])
+  try {
+    const res = await request(app)
+      .patch(`/api/admins/${GHOST}`)
+      .set('Authorization', `Bearer ${superToken()}`)
+      .send({ punto_de_venta: 'Centenario' })
+    assert.equal(res.status, 404)
+    assert.equal(res.body.error, 'Admin not found')
+  } finally {
+    restore()
+  }
+})
+
+// Same dead-guard class as the branch above, on the RPC side: if the RPC ever
+// resolves with no row and no error, `updated` stays falsy and `updated.id`
+// throws a raw 500 ("Cannot read properties of null") instead of a clean 404.
+for (const [label, data] of [['null', null], ['an empty array', []]]) {
+  test(`PATCH /api/admins/:id — the RPC resolving ${label} maps to 404, not 500`, async () => {
+    const restore = mockSupabaseSequence([
+      { table: 'admins', result: { data: SUPER, error: null } }, // requireAuth
+      { rpc: 'update_admin_role_status', result: { data, error: null } }
+    ])
+    try {
+      const res = await request(app)
+        .patch(`/api/admins/${GHOST}`)
+        .set('Authorization', `Bearer ${superToken()}`)
+        .send({ role: 'admin' })
+      assert.equal(res.status, 404)
+      assert.equal(res.body.error, 'Admin not found')
+    } finally {
+      restore()
+    }
+  })
+}
+
+// The 404 mapping must stay narrow: a genuine write failure is still a 500, not
+// a misleading "Admin not found".
+test('PATCH /api/admins/:id — a real write error is NOT masked as 404', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } }, // requireAuth
+    { table: 'admins', result: { data: null, error: { code: '08006', message: 'connection failure' } } }
+  ])
+  try {
+    const res = await request(app)
+      .patch(`/api/admins/${PLAIN.id}`)
+      .set('Authorization', `Bearer ${superToken()}`)
+      .send({ punto_de_venta: 'Centenario' })
+    assert.equal(res.status, 500)
+  } finally {
+    restore()
+  }
+})
+
 test('PATCH /api/admins/:id — cannot deactivate your own account (400)', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: SUPER, error: null } } // requireAuth (self-check trips before any target fetch)
@@ -158,7 +408,7 @@ test('PATCH /api/admins/:id — unknown admin id maps to 404', async () => {
   ])
   try {
     const res = await request(app)
-      .patch('/api/admins/does-not-exist')
+      .patch(`/api/admins/${GHOST}`)
       .set('Authorization', `Bearer ${superToken()}`)
       .send({ role: 'admin' })
     assert.equal(res.status, 404)
@@ -166,6 +416,46 @@ test('PATCH /api/admins/:id — unknown admin id maps to 404', async () => {
     restore()
   }
 })
+
+// admins.id is a uuid column, so a malformed `:id` reaches Postgres as an
+// UNCASTABLE literal (22P02) — NOT as PostgREST's no-rows signal — and BOTH
+// branches of this handler mishandled it. The RPC branch's error text carries
+// neither 'admin_not_found' nor 'last_active_superadmin', so it fell through to
+// the generic `next(error)`; the update branch's 22P02 is not PGRST116, so
+// `isNoRowsReturned` was false and it fell through too. Either way: 500.
+//
+// A missing or malformed id in the URL (an unset client-side ref serialized as
+// the literal string 'undefined', say) is a routine client mistake, not a
+// database failure, so it answers the SAME 404 a well-formed unknown id does,
+// with the SAME message — the sibling routes' guard (assignments.js DELETE
+// /:id, attempts.js GET /:id, users.js PATCH /:id) applied to the one handler
+// that was missed.
+for (const [label, body] of [
+  ['the RPC branch', { role: 'admin' }],
+  ['the punto_de_venta-only branch', { punto_de_venta: 'Centenario' }]
+]) {
+  test(`PATCH /api/admins/:id — a non-UUID id returns 404, not 500, before any write (${label})`, async () => {
+    for (const id of ['undefined', 'admin-2', 'null', `${GHOST}x`, '1']) {
+      const restore = mockSupabaseSequence([
+        { table: 'admins', result: { data: SUPER, error: null } } // requireAuth
+      ])
+      try {
+        const res = await request(app)
+          .patch(`/api/admins/${id}`)
+          .set('Authorization', `Bearer ${superToken()}`)
+          .send(body)
+        assert.equal(res.status, 404, id)
+        assert.equal(res.body.error, 'Admin not found', id)
+        // requireAuth's own lookup is the ONLY admins read; no write of either
+        // kind was attempted.
+        assert.equal(restore.calls.some((c) => c.method === 'rpc'), false, id)
+        assert.equal(restore.calls.some((c) => c.method === 'update'), false, id)
+      } finally {
+        restore()
+      }
+    }
+  })
+}
 
 // --- register no longer creates admins for authenticated JWTs ---
 

@@ -40,7 +40,42 @@ export async function jwtHostAuthMiddleware(socket, next) {
   let payload
   try {
     payload = verifyToken(token)
-  } catch {
+  } catch (err) {
+    // A TypeError is not a bad token — it is verifyToken refusing a broken
+    // `audience` option, i.e. a programming/config error. Reporting it as the
+    // ordinary UNAUTHORIZED made that deliberate loud failure indistinguishable
+    // from normal traffic. Unlike the HTTP middlewares this one cannot rethrow:
+    // sockets/index.js calls it WITHOUT awaiting, so a rejected promise would be
+    // an unhandled rejection. It logs instead — still failing closed, since a
+    // misconfiguration must never grant host.
+    //
+    // The distinct signal belongs in the SERVER LOG only: socket.io serializes
+    // err.message into the connect_error payload, so reporting
+    // 'AUTH_MISCONFIGURED' disclosed to a still-unauthenticated client that the
+    // auth layer is broken. Loud to operators, silent to attackers — the client
+    // gets the same generic UNAUTHORIZED every other refusal here uses.
+    //
+    // Reach, honestly: NO current call site can trigger this. verifyToken only
+    // throws that TypeError for a present-but-invalid `options.audience`, and
+    // this one calls it with no options at all. It is defense-in-depth for a
+    // future caller that passes a dynamic or config-derived audience (e.g. the
+    // TODO below, which switches to { audience: 'admin' }) — not a guard
+    // against a live bug.
+    if (err instanceof TypeError) {
+      console.error('jwtHostAuthMiddleware: verifyToken is misconfigured (AUTH_MISCONFIGURED) —', err)
+      return next(new Error('UNAUTHORIZED'))
+    }
+    return next(new Error('UNAUTHORIZED'))
+  }
+
+  // Same audience rule as requireAuth on the HTTP side, including the same
+  // one-release tolerance for pre-deploy tokens with no aud claim: a missing
+  // aud is treated as 'admin', any OTHER audience (e.g. 'usuario') is
+  // refused. Without this, a usuario token passes signature verification and
+  // is blocked only incidentally, by an admins lookup on a users.id.
+  // TODO(next release): switch to verifyToken(token, { audience: 'admin' })
+  // once every legacy no-aud token has expired, and delete this check.
+  if (payload.aud !== undefined && payload.aud !== 'admin') {
     return next(new Error('UNAUTHORIZED'))
   }
 

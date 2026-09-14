@@ -1,5 +1,6 @@
 import { requireAuth } from './requireAuth.js'
 import { requireQuizOwner } from './requireQuizOwner.js'
+import { httpError } from '../lib/httpError.js'
 
 // jwtGate helpers — wrap the jwt-based middlewares so they only enforce
 // under AUTH_MODE=jwt. Under AUTH_MODE=legacy they are no-ops, so the
@@ -19,4 +20,15 @@ export function ownerGate(options) {
     if (process.env.AUTH_MODE === 'jwt') return ownerMiddleware(req, res, next)
     return next()
   }
+}
+
+// requireJwtMode — hard gate, the inverse of authGate's/ownerGate's no-op
+// semantics under legacy. The new usuario/store-scoped namespaces have no
+// legacy fallback identity: with no req.admin/req.user, every store-scoping
+// filter would silently degrade to "see everything" instead of enforcing a
+// scope. Rather than risk that cross-store leak, these namespaces refuse to
+// serve at all outside AUTH_MODE=jwt.
+export function requireJwtMode(req, res, next) {
+  if (process.env.AUTH_MODE !== 'jwt') return next(httpError(501, 'This feature requires AUTH_MODE=jwt'))
+  return next()
 }

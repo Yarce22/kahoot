@@ -7,11 +7,14 @@ import { signToken } from '../lib/jwt.js'
 import { httpError } from '../lib/httpError.js'
 import { getClientOrigin } from '../lib/clientOrigin.js'
 import emailService from '../lib/email.js'
+import { isUniqueViolation } from '../lib/pgErrors.js'
+import { PUNTOS_DE_VENTA } from '../lib/puntosDeVenta.js'
 
 export const authRouter = Router()
 
 const BCRYPT_COST = 12
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const PUNTO_DE_VENTA_ERROR = `punto_de_venta must be one of: ${PUNTOS_DE_VENTA.join(', ')}`
 const RESET_TOKEN_TTL_MS = 30 * 60 * 1000
 const MIN_PASSWORD_LENGTH = 8
 
@@ -52,22 +55,6 @@ const FORGOT_PASSWORD_MESSAGE = 'Si ese email está registrado, te enviamos un e
 // Generated once with: bcrypt.hashSync('not-a-real-password', 12)
 const DUMMY_HASH = '$2b$12$fLW7OVDfaQDuxoDkJ7EWWOiDMJL77XGv/x.iF1N4el6P300rNwPsq'
 
-// Postgres unique_violation error code
-const PG_UNIQUE_VIOLATION = '23505'
-
-// isUniqueViolation — the primary signal is the Postgres error code, but
-// supabase-js's error shape for constraint violations isn't formally
-// guaranteed across versions/transports (e.g. PostgREST can surface the
-// code differently, or omit it, while still describing the conflict in
-// `message`/`details`). Fall back to a text match on the unique-constraint
-// signal so the 409 mapping stays robust either way.
-function isUniqueViolation(error) {
-  if (!error) return false
-  if (error.code === PG_UNIQUE_VIOLATION) return true
-  const text = `${error.message ?? ''} ${error.details ?? ''}`.toLowerCase()
-  return text.includes('duplicate key') || text.includes('unique constraint') || text.includes('already exists')
-}
-
 // POST /api/auth/login — always open.
 authRouter.post('/login', async (req, res, next) => {
   const { email, password } = req.body ?? {}
@@ -93,7 +80,11 @@ authRouter.post('/login', async (req, res, next) => {
     return next(httpError(401, 'Invalid email or password'))
   }
 
-  const token = signToken({ sub: admin.id, email: admin.email })
+  // aud is explicit (not left to signToken's default) so this call site
+  // reads correctly on its own and stays correct even if the default ever
+  // changes — admin login must always issue an admin-audience token
+  // (spec: Audience-Separated JWT Issuance).
+  const token = signToken({ sub: admin.id, email: admin.email, aud: 'admin' })
 
   res.json({ token, admin: { id: admin.id, email: admin.email, role: admin.role } })
 })
@@ -287,10 +278,13 @@ function legacyAdminTokenMatches(req) {
 }
 
 async function createAdmin(req, res, next) {
-  const { email, password } = req.body ?? {}
+  const { email, password, punto_de_venta } = req.body ?? {}
 
   if (!email || !EMAIL_RE.test(email)) return next(httpError(400, 'A valid email is required'))
   if (!password) return next(httpError(400, 'password is required'))
+  // Same NOT NULL column as POST /api/admins (migration 010): the bootstrap
+  // admin must name its store too, and there is no safe default to fall back on.
+  if (!PUNTOS_DE_VENTA.includes(punto_de_venta)) return next(httpError(400, PUNTO_DE_VENTA_ERROR))
 
   // Note: the pre-check below is a UX fast path only, NOT the source of
   // truth for uniqueness — it has a TOCTOU race (two concurrent registers
@@ -309,8 +303,12 @@ async function createAdmin(req, res, next) {
 
   const { data: admin, error } = await supabase
     .from('admins')
-    .insert({ email, password_hash: passwordHash })
-    .select('id, email')
+    .insert({ email, password_hash: passwordHash, punto_de_venta })
+    // punto_de_venta is read back and returned so both admin-creation paths
+    // answer with the same shape — POST /api/admins already exposes it, and the
+    // column is required on the way in, so hiding it on the way out is just an
+    // inconsistency a caller has to work around.
+    .select('id, email, punto_de_venta')
     .single()
 
   if (error) {
@@ -320,5 +318,5 @@ async function createAdmin(req, res, next) {
     return next(error)
   }
 
-  res.status(201).json({ admin: { id: admin.id, email: admin.email } })
+  res.status(201).json({ admin: { id: admin.id, email: admin.email, punto_de_venta: admin.punto_de_venta } })
 }

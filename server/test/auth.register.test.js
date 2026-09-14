@@ -20,7 +20,7 @@ test('POST /api/auth/register — duplicate email (Postgres 23505) returns 409, 
     const res = await request(app)
       .post('/api/auth/register')
       .set('x-admin-token', 'test-admin-token')
-      .send({ email: 'dup@example.com', password: 'some-password' })
+      .send({ email: 'dup@example.com', password: 'some-password', punto_de_venta: 'Cerritos' })
 
     assert.equal(res.status, 409)
     assert.equal(res.body.error, 'An admin with this email already exists')
@@ -38,10 +38,69 @@ test('POST /api/auth/register — duplicate email surfaced without a code, only 
     const res = await request(app)
       .post('/api/auth/register')
       .set('x-admin-token', 'test-admin-token')
-      .send({ email: 'dup2@example.com', password: 'some-password' })
+      .send({ email: 'dup2@example.com', password: 'some-password', punto_de_venta: 'Cerritos' })
 
     assert.equal(res.status, 409)
     assert.equal(res.body.error, 'An admin with this email already exists')
+  } finally {
+    restore()
+  }
+})
+
+// The bootstrap path inserts into admins directly, so it is bound by the same
+// NOT NULL punto_de_venta column as POST /api/admins.
+test('POST /api/auth/register — punto_de_venta is required (400), and nothing is inserted', async () => {
+  const restore = mockSupabaseSequence([])
+  try {
+    const res = await request(app)
+      .post('/api/auth/register')
+      .set('x-admin-token', 'test-admin-token')
+      .send({ email: 'first@example.com', password: 'some-password' })
+
+    assert.equal(res.status, 400)
+    assert.equal(restore.calls.filter((c) => c.method === 'insert').length, 0)
+  } finally {
+    restore()
+  }
+})
+
+test('POST /api/auth/register — a punto_de_venta outside the allowlist is rejected (400)', async () => {
+  const restore = mockSupabaseSequence([])
+  try {
+    const res = await request(app)
+      .post('/api/auth/register')
+      .set('x-admin-token', 'test-admin-token')
+      .send({ email: 'first@example.com', password: 'some-password', punto_de_venta: 'Narnia' })
+
+    assert.equal(res.status, 400)
+    assert.equal(restore.calls.filter((c) => c.method === 'insert').length, 0)
+  } finally {
+    restore()
+  }
+})
+
+// The response must expose punto_de_venta too, not just persist it: this is the
+// other admin-creation path, and POST /api/admins already returns it. A caller
+// that has to guess which shape it got back is a caller that will get it wrong.
+test('POST /api/auth/register — persists punto_de_venta on the bootstrap admin and returns it', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: null, error: { message: 'no rows' } } },                                  // pre-check
+    { table: 'admins', result: { data: { id: 'boot-1', email: 'first@example.com', punto_de_venta: 'Laureles' }, error: null } } // insert
+  ])
+  try {
+    const res = await request(app)
+      .post('/api/auth/register')
+      .set('x-admin-token', 'test-admin-token')
+      .send({ email: 'first@example.com', password: 'some-password', punto_de_venta: 'Laureles' })
+
+    assert.equal(res.status, 201)
+    const insert = restore.calls.find((c) => c.method === 'insert')
+    assert.equal(insert.args[0].punto_de_venta, 'Laureles')
+    assert.equal(res.body.admin.punto_de_venta, 'Laureles')
+    // The write-back read has to ASK for the column, or the value above could
+    // only ever be echoed from the request body.
+    const insertSelect = restore.calls.filter((c) => c.method === 'select').at(-1)
+    assert.match(insertSelect.args[0], /\bpunto_de_venta\b/)
   } finally {
     restore()
   }

@@ -25,14 +25,31 @@ function makeQueryBuilder(result, calls = [], table) {
     return builder
   }
   const builder = {
-    select: () => builder,
+    // `select` is recorded too: the column list is the only observable proof
+    // that a read actually asks for a given column (e.g. punto_de_venta).
+    // `select` is recorded with ALL its arguments, so a test can assert the
+    // options bag too — notably `{ count: 'exact' }`, which is what makes the
+    // reported `total` a real row count rather than the length of one page.
+    select: record('select'),
     eq: record('eq'),
     in: record('in'),
     is: () => builder,
-    or: () => builder,
+    or: record('or'),
+    gte: record('gte'),
+    lte: record('lte'),
+    // `range` is recorded, not simulated: PostgREST answers a ranged request
+    // with the ALREADY-SLICED page plus the full count, so a fixture supplies
+    // `{ data, count }` for the window it represents and the test asserts the
+    // window that was actually requested.
+    range: record('range'),
     order: () => builder,
     limit: () => builder,
     insert: record('insert'),
+    // `upsert` is recorded with ALL its arguments, options bag included: the
+    // `{ onConflict, ignoreDuplicates }` pair is the only observable proof that
+    // a batch write is ONE conflict-tolerant statement rather than a loop of
+    // inserts, which is what makes it atomic.
+    upsert: record('upsert'),
     update: record('update'),
     delete: () => builder,
     single: () => resolved,
@@ -49,8 +66,15 @@ function makeQueryBuilder(result, calls = [], table) {
  * this keeps the mock honest about call order instead of silently returning
  * wrong data.
  *
+ * A `result` may carry `count` alongside `data`/`error`; it flows through
+ * untouched, mirroring what PostgREST returns for a `{ count: 'exact' }`
+ * select — the total matching row count, independent of the page returned.
+ *
  * The returned restore function additionally carries a `.calls` array
- * recording every `insert`/`update`/`eq`/`in` made across the whole sequence
+ * recording every
+ * `select`/`insert`/`upsert`/`update`/`eq`/`in`/`or`/`gte`/`lte`/`range`
+ * made across the whole sequence
+ * (plus every `rpc`, as `{ table: fnName, method: 'rpc', args: [params] }`)
  * as `{ table, method, args }` — so a test can assert the payload that was
  * actually sent (e.g. that a password was stored as a bcrypt hash, not
  * plaintext) and the filter it was scoped by, not merely that some write
@@ -76,7 +100,7 @@ export function mockSupabaseSequence(sequence) {
     return makeQueryBuilder(next.result, calls, table)
   }
 
-  supabase.rpc = (fn) => {
+  supabase.rpc = (fn, args) => {
     const next = queue.shift()
     if (!next) {
       throw new Error(`mockSupabaseSequence: unexpected supabase.rpc("${fn}") call — queue exhausted`)
@@ -85,6 +109,10 @@ export function mockSupabaseSequence(sequence) {
       const expected = next.table ? `from("${next.table}")` : `rpc("${next.rpc}")`
       throw new Error(`mockSupabaseSequence: expected ${expected} but got rpc("${fn}")`)
     }
+    // Recorded like insert/update: the RPC arguments are the only observable
+    // proof of WHAT a route asked the database function to change — and of how
+    // many writes it took to get there.
+    calls.push({ table: fn, method: 'rpc', args: [args] })
     return Promise.resolve(next.result)
   }
 

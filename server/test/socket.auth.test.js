@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { io as ioClient } from 'socket.io-client'
+import jwt from 'jsonwebtoken'
 
 process.env.JWT_SECRET ??= 'test-secret'
 process.env.SUPABASE_URL ??= 'http://localhost:54321'
@@ -11,6 +12,7 @@ const { mockSupabaseSequence } = await import('./helpers/mockSupabase.js')
 const { httpServer } = await import('../src/index.js')
 const { signToken } = await import('../src/lib/jwt.js')
 const { activeGames } = await import('../src/runtime/activeGames.js')
+const { jwtHostAuthMiddleware } = await import('../src/sockets/hostAuth.js')
 
 function listen() {
   return new Promise((resolve) => {
@@ -39,6 +41,89 @@ function makeGame(quizId) {
     hostDisconnectTimer: null
   }
 }
+
+// ---- jwtHostAuthMiddleware: audience enforcement ----
+//
+// This is the ONLY auth path for the live-game host socket under
+// AUTH_MODE=jwt, and it must refuse a usuario-audience token exactly like
+// requireAuth does on the HTTP side. The admins lookup is mocked to SUCCEED
+// so the rejection is attributable to the audience check alone, and not to a
+// lookup that happens to fail on a users.id.
+const ADMIN_ROW = { id: 'user-1', email: 'u@example.com', role: 'admin', is_active: true }
+
+test('jwtHostAuthMiddleware — a usuario-audience token never becomes a host', async () => {
+  const token = signToken({ sub: 'user-1', email: 'u@example.com', aud: 'usuario' })
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: ADMIN_ROW, error: null } }
+  ])
+  const socket = { handshake: { auth: { token } } }
+  let err
+  try {
+    await jwtHostAuthMiddleware(socket, (e) => { err = e })
+  } finally {
+    restore()
+  }
+  assert.equal(err.message, 'UNAUTHORIZED')
+  assert.equal(socket.isHost, undefined)
+  assert.equal(socket.admin, undefined)
+})
+
+test('jwtHostAuthMiddleware — a legacy no-aud token is still accepted (same one-release tolerance as requireAuth)', async () => {
+  const legacyToken = jwt.sign({ sub: 'admin-1', email: 'a@example.com' }, process.env.JWT_SECRET, {
+    algorithm: 'HS256',
+    expiresIn: '8h'
+  })
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: { ...ADMIN_ROW, id: 'admin-1', email: 'a@example.com' }, error: null } }
+  ])
+  const socket = { handshake: { auth: { token: legacyToken } } }
+  let err = 'not-called'
+  try {
+    await jwtHostAuthMiddleware(socket, (e) => { err = e })
+  } finally {
+    restore()
+  }
+  assert.equal(err, undefined)
+  assert.equal(socket.isHost, true)
+})
+
+// verifyToken throws a TypeError on a broken `audience` option — a programming
+// or configuration error, deliberately loud. A blanket `catch { UNAUTHORIZED }`
+// made it indistinguishable from an ordinary bad token, so an audience check
+// silently degraded into no check at all would look like normal traffic.
+//
+// This middleware cannot simply rethrow the way the HTTP ones do: io.use calls
+// it WITHOUT awaiting, so a rejected promise would be an unhandled rejection.
+// It logs instead — and still refuses host status.
+//
+// The distinct signal belongs in the SERVER LOG, not in the handshake reply:
+// socket.io serializes err.message into the connect_error payload, so an
+// 'AUTH_MISCONFIGURED' message told the still-unauthenticated client that the
+// auth layer is broken. Loud to operators, silent to attackers.
+test('jwtHostAuthMiddleware — a TypeError from verifyToken is logged, not disclosed to the client', async () => {
+  const original = jwt.verify
+  const originalConsoleError = console.error
+  const logged = []
+  console.error = (...args) => { logged.push(args) }
+  jwt.verify = () => { throw new TypeError('verifyToken: options.audience must be a non-empty string when provided') }
+  const socket = { handshake: { auth: { token: 'any-token' } } }
+  let err
+  try {
+    await jwtHostAuthMiddleware(socket, (e) => { err = e })
+  } finally {
+    jwt.verify = original
+    console.error = originalConsoleError
+  }
+  // Client-visible payload: the ordinary generic refusal, nothing more.
+  assert.equal(err.message, 'UNAUTHORIZED')
+  // Server-side: the misconfiguration is still reported loudly.
+  assert.equal(logged.length, 1)
+  assert.ok(logged[0].join(' ').includes('misconfigured'))
+  assert.ok(logged[0].some((a) => a instanceof TypeError))
+  // Still fails closed: a misconfiguration never grants host status.
+  assert.equal(socket.isHost, undefined)
+  assert.equal(socket.admin, undefined)
+})
 
 test('socket handshake — invalid JWT is rejected at connection', async () => {
   const port = await listen()
