@@ -1,6 +1,7 @@
 import { test, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import bcrypt from 'bcryptjs'
+import jwt from 'jsonwebtoken'
 
 process.env.JWT_SECRET ??= 'test-secret'
 process.env.SUPABASE_URL ??= 'http://localhost:54321'
@@ -25,6 +26,26 @@ test('POST /api/auth/login — returns a JWT on correct credentials', async () =
     assert.equal(res.status, 200)
     assert.equal(typeof res.body.token, 'string')
     assert.deepEqual(res.body.admin, { id: ADMIN.id, email: ADMIN.email, role: ADMIN.role })
+  } finally {
+    restore()
+  }
+})
+
+// The admin/usuario namespaces are isolated by JWT audience (spec: Audience-
+// Separated JWT Issuance). An admin login token must carry aud=admin so
+// requireUserAuth's native audience check rejects it on /api/user/* routes.
+test('POST /api/auth/login — the issued token carries aud=admin', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: ADMIN, error: null } }
+  ])
+  try {
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ email: ADMIN.email, password: PASSWORD })
+
+    assert.equal(res.status, 200)
+    const decoded = jwt.decode(res.body.token)
+    assert.equal(decoded.aud, 'admin')
   } finally {
     restore()
   }
