@@ -231,10 +231,46 @@ test('GET /api/assignments — a plain admin requesting another store gets 403',
 
 // --- DELETE /:id ---
 
+// POST / refuses to assign a quiz the caller does not own; DELETE must refuse
+// to UNassign one too, otherwise the ownership boundary is one-directional —
+// a plain admin who cannot add a roster entry could still remove one.
+test('DELETE /api/assignments/:id — a non-owner admin gets 403 even for an in-store assignment', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } },
+    { table: 'quiz_assignments', result: { data: { id: 'assign-1', quiz_id: QUIZ_ID, user: { punto_de_venta: 'Cerritos' }, quiz: { id: QUIZ_ID, owner_id: 'someone-else' } }, error: null } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .delete('/api/assignments/assign-1')
+      .set('Authorization', `Bearer ${plainAToken()}`)
+    assert.equal(res.status, 403)
+    assert.equal(restore.calls.some((c) => c.table === 'quiz_assignments' && c.method === 'delete'), false)
+  } finally {
+    restore()
+  }
+})
+
+test('DELETE /api/assignments/:id — a superadmin bypasses quiz ownership', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } },
+    { table: 'quiz_assignments', result: { data: { id: 'assign-1', quiz_id: QUIZ_ID, user: { punto_de_venta: 'Campestre' }, quiz: { id: QUIZ_ID, owner_id: 'someone-else' } }, error: null } },
+    { table: 'quiz_attempts', result: { data: [], error: null } },
+    { table: 'quiz_assignments', result: { data: null, error: null } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .delete('/api/assignments/assign-1')
+      .set('Authorization', `Bearer ${superToken()}`)
+    assert.equal(res.status, 204)
+  } finally {
+    restore()
+  }
+})
+
 test('DELETE /api/assignments/:id — an unassignment attempt on an already-attempted assignment returns 409', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
-    { table: 'quiz_assignments', result: { data: { id: 'assign-1', quiz_id: QUIZ_ID, user: { punto_de_venta: 'Cerritos' } }, error: null } },
+    { table: 'quiz_assignments', result: { data: { id: 'assign-1', quiz_id: QUIZ_ID, user: { punto_de_venta: 'Cerritos' }, quiz: { id: QUIZ_ID, owner_id: PLAIN_A.id } }, error: null } },
     { table: 'quiz_attempts', result: { data: [{ id: 'attempt-1' }], error: null } }
   ])
   try {
@@ -251,7 +287,7 @@ test('DELETE /api/assignments/:id — an unassignment attempt on an already-atte
 test('DELETE /api/assignments/:id — an assignment outside the caller\'s store returns 404', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
-    { table: 'quiz_assignments', result: { data: { id: 'assign-1', quiz_id: QUIZ_ID, user: { punto_de_venta: 'Campestre' } }, error: null } }
+    { table: 'quiz_assignments', result: { data: { id: 'assign-1', quiz_id: QUIZ_ID, user: { punto_de_venta: 'Campestre' }, quiz: { id: QUIZ_ID, owner_id: PLAIN_A.id } }, error: null } }
   ])
   try {
     const res = await request(buildApp())
@@ -266,7 +302,7 @@ test('DELETE /api/assignments/:id — an assignment outside the caller\'s store 
 test('DELETE /api/assignments/:id — an unattempted, in-scope assignment is removed (204)', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } },
-    { table: 'quiz_assignments', result: { data: { id: 'assign-1', quiz_id: QUIZ_ID, user: { punto_de_venta: 'Cerritos' } }, error: null } },
+    { table: 'quiz_assignments', result: { data: { id: 'assign-1', quiz_id: QUIZ_ID, user: { punto_de_venta: 'Cerritos' }, quiz: { id: QUIZ_ID, owner_id: PLAIN_A.id } }, error: null } },
     { table: 'quiz_attempts', result: { data: [], error: null } },
     { table: 'quiz_assignments', result: { data: null, error: null } }
   ])

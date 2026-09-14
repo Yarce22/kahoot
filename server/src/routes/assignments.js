@@ -151,7 +151,7 @@ assignmentsRouter.delete('/:id', async (req, res, next) => {
 
   const { data: assignment, error } = await supabase
     .from('quiz_assignments')
-    .select('id, quiz_id, user:users(punto_de_venta)')
+    .select('id, quiz_id, user:users(punto_de_venta), quiz:quizzes(id, owner_id)')
     .eq('id', id)
     .single()
 
@@ -159,6 +159,16 @@ assignmentsRouter.delete('/:id', async (req, res, next) => {
 
   if (req.admin.role !== 'superadmin' && assignment.user?.punto_de_venta !== req.admin.punto_de_venta) {
     return next(httpError(404, 'Assignment not found'))
+  }
+
+  // Ownership is checked here for the same reason POST / checks it: without
+  // it the boundary is one-directional — a plain admin forbidden from
+  // ASSIGNING a quiz they don't own could still UNassign it, as long as the
+  // target user happened to be in their store. The owner_id is embedded in
+  // the lookup above rather than fetched separately: one round trip, and the
+  // 404-before-403 order keeps D9's enumeration guard intact.
+  if (!assignment.quiz || !isQuizOwner(req.admin, assignment.quiz)) {
+    return next(httpError(403, 'Not the quiz owner'))
   }
 
   const { data: attempts, error: attemptsError } = await supabase
