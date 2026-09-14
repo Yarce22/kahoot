@@ -239,6 +239,49 @@ test('GET /api/attempts — from/to bound started_at', async () => {
   }
 })
 
+// Date.parse is far more permissive than timestamptz input: Date.parse('5')
+// and Date.parse('0') both succeed (as years), so `?from=5` sailed past the
+// 400 gate and then blew up inside Postgres as a 500 — the exact failure this
+// validation exists to prevent.
+test('GET /api/attempts — a date Postgres would reject is a 400, not a 500', async () => {
+  for (const qs of ['from=5', 'from=0', 'to=2026', 'from=2026-13-45', `from=${encodeURIComponent('Jan 1 2026')}`, 'to=2026-01', 'from=20260101']) {
+    const restore = mockSupabaseSequence([
+      { table: 'admins', result: { data: SUPER, error: null } }
+    ])
+    try {
+      const res = await request(buildApp())
+        .get(`/api/attempts?${qs}`)
+        .set('Authorization', `Bearer ${superToken()}`)
+      assert.equal(res.status, 400, qs)
+      assert.equal(restore.calls.some((c) => c.table === 'quiz_attempts'), false, qs)
+    } finally {
+      restore()
+    }
+  }
+})
+
+// The raw query string used to be forwarded verbatim. Normalizing it first
+// means Postgres always receives a format it accepts, whatever shape the
+// client sent.
+test('GET /api/attempts — from/to reach the query normalized, not as the raw query string', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } },
+    { table: 'quiz_attempts', result: { data: [], error: null, count: 0 } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .get(`/api/attempts?from=2026-01-01&to=${encodeURIComponent('2026-02-01T10:30:00+02:00')}`)
+      .set('Authorization', `Bearer ${superToken()}`)
+    assert.equal(res.status, 200)
+    const gte = restore.calls.find((c) => c.table === 'quiz_attempts' && c.method === 'gte')
+    const lte = restore.calls.find((c) => c.table === 'quiz_attempts' && c.method === 'lte')
+    assert.deepEqual(gte.args, ['started_at', '2026-01-01T00:00:00.000Z'])
+    assert.deepEqual(lte.args, ['started_at', '2026-02-01T08:30:00.000Z'])
+  } finally {
+    restore()
+  }
+})
+
 test('GET /api/attempts — from/to are optional and independent', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: SUPER, error: null } },

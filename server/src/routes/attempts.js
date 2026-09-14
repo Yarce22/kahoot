@@ -16,6 +16,9 @@ const MAX_PAGE_SIZE = 100
 // not an empty result.
 const ATTEMPT_STATUSES = ['in_progress', 'completed', 'expired']
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+// Accepts the two shapes the client actually sends: a bare calendar day
+// (YYYY-MM-DD, what an <input type="date"> submits) and a full ISO datetime.
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?)?$/
 
 // This namespace has no legacy identity to fall back to — store scoping is
 // meaningless without a JWT admin identity (design D3/D4).
@@ -86,13 +89,22 @@ attemptsRouter.get('/', async (req, res, next) => {
     }
   }
 
-  // from/to bound started_at (route contract). Validated as parseable dates so
-  // a value like 'yesterday' is a 400 rather than a Postgres cast error.
+  // from/to bound started_at (route contract). Date.parse alone is NOT a
+  // stand-in for what timestamptz accepts — it happily reads '5' and '0' as
+  // years, so those passed the gate and then failed inside Postgres as a 500,
+  // the exact outcome this check exists to prevent. The shape is pinned to
+  // ISO 8601 first (date-only or full datetime, which is what the client
+  // sends), then Date.parse rejects the shapes that are well-formed but not
+  // real dates (2026-13-45). The NORMALIZED value is what reaches the query:
+  // forwarding the raw string handed Postgres whatever the caller typed.
+  const range = {}
   for (const key of ['from', 'to']) {
     const value = req.query[key]
-    if (value !== undefined && (value === '' || Number.isNaN(Date.parse(value)))) {
+    if (value === undefined) continue
+    if (typeof value !== 'string' || !ISO_DATE_RE.test(value) || Number.isNaN(Date.parse(value))) {
       return next(httpError(400, `${key} must be an ISO 8601 date`))
     }
+    range[key] = new Date(value).toISOString()
   }
 
   const { page, pageSize } = parsePagination(req.query)
@@ -112,8 +124,8 @@ attemptsRouter.get('/', async (req, res, next) => {
   if (req.query.user_id) query = query.eq('user_id', req.query.user_id)
   if (req.query.status) query = query.eq('status', req.query.status)
   if (cycle !== undefined) query = query.eq('cycle', cycle)
-  if (req.query.from) query = query.gte('started_at', req.query.from)
-  if (req.query.to) query = query.lte('started_at', req.query.to)
+  if (range.from) query = query.gte('started_at', range.from)
+  if (range.to) query = query.lte('started_at', range.to)
   query = applyStoreFilter(query, effectiveStore, 'user.punto_de_venta')
 
   // `.range` is inclusive on both ends, hence the -1.
