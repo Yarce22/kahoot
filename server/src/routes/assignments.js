@@ -48,8 +48,20 @@ assignmentsRouter.post('/', async (req, res, next) => {
 
   if (usersError) return next(usersError)
 
+  const resolvedUsers = targetUsers ?? []
+
+  // Every requested id MUST resolve to a row before anything is checked or
+  // written. Without this, an id that matched no user was invisible to the
+  // store guard below (which only inspects what the DB returned) yet still
+  // reached the insert loop — a cross-store check bypassed by a typo, and,
+  // because the inserts are per-row, rows committed before the eventual FK
+  // failure stayed committed.
+  if (resolvedUsers.length !== new Set(user_ids).size) {
+    return next(httpError(404, 'One or more user_ids do not exist'))
+  }
+
   if (req.admin.role !== 'superadmin') {
-    const hasCrossStoreTarget = (targetUsers ?? []).some((u) => u.punto_de_venta !== req.admin.punto_de_venta)
+    const hasCrossStoreTarget = resolvedUsers.some((u) => u.punto_de_venta !== req.admin.punto_de_venta)
     if (hasCrossStoreTarget) return next(httpError(403, 'CROSS_STORE_ASSIGNMENT_FORBIDDEN'))
   }
 
@@ -59,7 +71,10 @@ assignmentsRouter.post('/', async (req, res, next) => {
   // Per-row insert (not a single bulk insert) so ONE conflicting row can be
   // skipped without failing the rest of the batch — supabase-js has no
   // per-row ON CONFLICT reporting from a single multi-row insert call.
-  for (const userId of user_ids) {
+  // Iterates the VERIFIED rows, never the raw request body — only ids that
+  // survived the existence and store checks above can ever be written (and a
+  // duplicated id collapses to one insert for free).
+  for (const { id: userId } of resolvedUsers) {
     const { data: row, error } = await supabase
       .from('quiz_assignments')
       .insert({ quiz_id, user_id: userId, cycle: quiz.assignment_cycle, assigned_by: req.admin.id })

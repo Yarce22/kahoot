@@ -118,6 +118,67 @@ test('POST /api/assignments — a cross-store target is rejected 403 CROSS_STORE
   }
 })
 
+// The store guard inspected the users the DB RETURNED, but the insert loop
+// iterated the RAW request body. An id absent from the lookup was therefore
+// never store-checked, yet still got an insert attempt — and because the
+// inserts are per-row, the ones before the failure stayed committed.
+test('POST /api/assignments — an id that matches no user is rejected 404, nothing inserted', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } },
+    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
+    { table: 'users', result: { data: [], error: null } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .post('/api/assignments')
+      .set('Authorization', `Bearer ${plainAToken()}`)
+      .send({ quiz_id: QUIZ_ID, user_ids: ['u-ghost'] })
+    assert.equal(res.status, 404)
+    assert.equal(restore.calls.some((c) => c.table === 'quiz_assignments' && c.method === 'insert'), false)
+  } finally {
+    restore()
+  }
+})
+
+test('POST /api/assignments — a real id mixed with an unknown id inserts NOTHING (all-or-nothing)', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } },
+    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
+    { table: 'users', result: { data: [{ id: 'u1', punto_de_venta: 'Cerritos' }], error: null } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .post('/api/assignments')
+      .set('Authorization', `Bearer ${plainAToken()}`)
+      .send({ quiz_id: QUIZ_ID, user_ids: ['u1', 'u-ghost'] })
+    assert.equal(res.status, 404)
+    assert.equal(restore.calls.some((c) => c.table === 'quiz_assignments' && c.method === 'insert'), false)
+  } finally {
+    restore()
+  }
+})
+
+// Duplicates collapse to one verified row: the loop now walks the DB result,
+// not the request body, so the same id twice cannot produce two inserts.
+test('POST /api/assignments — a duplicated user_id produces exactly one insert', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: PLAIN_A, error: null } },
+    { table: 'quizzes', result: { data: { owner_id: PLAIN_A.id, total_time_seconds: 600, assignment_cycle: 1 }, error: null } },
+    { table: 'users', result: { data: [{ id: 'u1', punto_de_venta: 'Cerritos' }], error: null } },
+    { table: 'quiz_assignments', result: { data: { id: 'assign-1', user_id: 'u1' }, error: null } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .post('/api/assignments')
+      .set('Authorization', `Bearer ${plainAToken()}`)
+      .send({ quiz_id: QUIZ_ID, user_ids: ['u1', 'u1'] })
+    assert.equal(res.status, 201)
+    assert.equal(restore.calls.filter((c) => c.table === 'quiz_assignments' && c.method === 'insert').length, 1)
+  } finally {
+    restore()
+  }
+})
+
 // spec: Superadmin cross-store assignment succeeds
 test('POST /api/assignments — a superadmin can assign a cross-store user', async () => {
   const restore = mockSupabaseSequence([
