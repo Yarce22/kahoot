@@ -75,6 +75,14 @@ usersRouter.get('/', async (req, res, next) => {
     return next(err)
   }
 
+  // Validated as a literal before it can reach the query: `=== 'true'` read
+  // EVERY other value — 'TRUE', '1', 'yes', a typo — as a filter for
+  // is_active=false, the OPPOSITE of what the caller asked for, and answered
+  // 200. Same contract the other filters in this namespace enforce.
+  if (req.query.is_active !== undefined && req.query.is_active !== 'true' && req.query.is_active !== 'false') {
+    return next(httpError(400, 'is_active must be true or false'))
+  }
+
   const { page, pageSize } = parsePagination(req.query)
   const start = (page - 1) * pageSize
 

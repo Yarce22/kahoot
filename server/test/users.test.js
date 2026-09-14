@@ -101,6 +101,60 @@ test('GET /api/users — a superadmin sees every store when no filter is given',
   }
 })
 
+// `req.query.is_active === 'true'` made EVERY value that is not that exact
+// string — 'TRUE', '1', 'yes', a typo — a silent filter for is_active=false,
+// the OPPOSITE of what the caller asked for, answered 200. Every other filter
+// in this PR rejects a malformed value; this one now does too.
+test('GET /api/users — a malformed is_active is rejected 400 instead of silently filtering false', async () => {
+  for (const value of ['TRUE', 'True', '1', '0', 'yes', 'no', 'ture', '']) {
+    const restore = mockSupabaseSequence([
+      { table: 'admins', result: { data: SUPER, error: null } }
+    ])
+    try {
+      const res = await request(buildApp())
+        .get(`/api/users?is_active=${encodeURIComponent(value)}`)
+        .set('Authorization', `Bearer ${superToken()}`)
+      assert.equal(res.status, 400, JSON.stringify(value))
+      assert.equal(restore.calls.some((c) => c.table === 'users'), false, JSON.stringify(value))
+    } finally {
+      restore()
+    }
+  }
+})
+
+test('GET /api/users — is_active=true and is_active=false reach the query as booleans', async () => {
+  for (const [value, expected] of [['true', true], ['false', false]]) {
+    const restore = mockSupabaseSequence([
+      { table: 'admins', result: { data: SUPER, error: null } },
+      { table: 'users', result: { data: [], error: null, count: 0 } }
+    ])
+    try {
+      const res = await request(buildApp())
+        .get(`/api/users?is_active=${value}`)
+        .set('Authorization', `Bearer ${superToken()}`)
+      assert.equal(res.status, 200, value)
+      const eqCall = restore.calls.find((c) => c.table === 'users' && c.method === 'eq' && c.args[0] === 'is_active')
+      assert.deepEqual(eqCall.args, ['is_active', expected], value)
+    } finally {
+      restore()
+    }
+  }
+})
+
+test('GET /api/users — an omitted is_active applies no status filter', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } },
+    { table: 'users', result: { data: [], error: null, count: 0 } }
+  ])
+  try {
+    const res = await request(buildApp()).get('/api/users').set('Authorization', `Bearer ${superToken()}`)
+    assert.equal(res.status, 200)
+    assert.equal(restore.calls.some((c) => c.table === 'users' && c.method === 'eq' && c.args[0] === 'is_active'), false)
+  } finally {
+    restore()
+  }
+})
+
 // spec (route contract): GET /?punto_de_venta&q&is_active&page&page_size —
 // `q` was silently dropped from the implementation.
 test('GET /api/users — q searches full_name and email with a single OR filter', async () => {
