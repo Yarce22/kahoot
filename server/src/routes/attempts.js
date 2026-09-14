@@ -11,6 +11,12 @@ const DEFAULT_PAGE = 1
 const DEFAULT_PAGE_SIZE = 25
 const MAX_PAGE_SIZE = 100
 
+// Mirrors quiz_attempts.status' CHECK constraint (migration 009). A value
+// outside this set can only ever match zero rows, so it is a client error,
+// not an empty result.
+const ATTEMPT_STATUSES = ['in_progress', 'completed', 'expired']
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 // This namespace has no legacy identity to fall back to — store scoping is
 // meaningless without a JWT admin identity (design D3/D4).
 attemptsRouter.use(requireJwtMode, requireAuth, requireStoreScope)
@@ -54,6 +60,41 @@ attemptsRouter.get('/', async (req, res, next) => {
     return next(err)
   }
 
+  // Filters are validated BEFORE they reach the query builder. Previously
+  // every one of them was forwarded verbatim: `cycle=abc` became Number('abc')
+  // = NaN inside .eq(), and quiz_id/user_id/status were never checked against
+  // the UUID columns and CHECK enum they filter — so a malformed value
+  // surfaced as a Postgres error (500) instead of a 400.
+  if (req.query.quiz_id !== undefined && !UUID_RE.test(req.query.quiz_id)) {
+    return next(httpError(400, 'quiz_id must be a UUID'))
+  }
+  if (req.query.user_id !== undefined && !UUID_RE.test(req.query.user_id)) {
+    return next(httpError(400, 'user_id must be a UUID'))
+  }
+  if (req.query.status !== undefined && !ATTEMPT_STATUSES.includes(req.query.status)) {
+    return next(httpError(400, `status must be one of: ${ATTEMPT_STATUSES.join(', ')}`))
+  }
+
+  let cycle
+  if (req.query.cycle !== undefined) {
+    cycle = Number(req.query.cycle)
+    // Number('') is 0 and Number('abc') is NaN — Number.isInteger rejects the
+    // latter, and the explicit emptiness check rejects the former, which would
+    // otherwise silently become a filter for cycle 0.
+    if (req.query.cycle === '' || !Number.isInteger(cycle)) {
+      return next(httpError(400, 'cycle must be an integer'))
+    }
+  }
+
+  // from/to bound started_at (route contract). Validated as parseable dates so
+  // a value like 'yesterday' is a 400 rather than a Postgres cast error.
+  for (const key of ['from', 'to']) {
+    const value = req.query[key]
+    if (value !== undefined && (value === '' || Number.isNaN(Date.parse(value)))) {
+      return next(httpError(400, `${key} must be an ISO 8601 date`))
+    }
+  }
+
   const { page, pageSize } = parsePagination(req.query)
   const start = (page - 1) * pageSize
 
@@ -70,7 +111,9 @@ attemptsRouter.get('/', async (req, res, next) => {
   if (req.query.quiz_id) query = query.eq('quiz_id', req.query.quiz_id)
   if (req.query.user_id) query = query.eq('user_id', req.query.user_id)
   if (req.query.status) query = query.eq('status', req.query.status)
-  if (req.query.cycle !== undefined) query = query.eq('cycle', Number(req.query.cycle))
+  if (cycle !== undefined) query = query.eq('cycle', cycle)
+  if (req.query.from) query = query.gte('started_at', req.query.from)
+  if (req.query.to) query = query.lte('started_at', req.query.to)
   query = applyStoreFilter(query, effectiveStore, 'user.punto_de_venta')
 
   // `.range` is inclusive on both ends, hence the -1.

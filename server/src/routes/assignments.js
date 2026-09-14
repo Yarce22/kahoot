@@ -15,6 +15,12 @@ const DEFAULT_PAGE_SIZE = 25
 // never exceed this.
 const MAX_PAGE_SIZE = 100
 
+// Mirrors quiz_assignments.status' CHECK constraint (migration 009) — note it
+// is NOT the same set as quiz_attempts.status. A value outside it can only
+// ever match zero rows, so it is a client error, not an empty result.
+const ASSIGNMENT_STATUSES = ['pending', 'completed']
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 function parsePagination(query) {
   const page = Math.max(1, parseInt(query.page, 10) || DEFAULT_PAGE)
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, parseInt(query.page_size, 10) || DEFAULT_PAGE_SIZE))
@@ -120,6 +126,19 @@ assignmentsRouter.get('/', async (req, res, next) => {
     effectiveStore = resolveStoreFilter(req, req.query.punto_de_venta || undefined)
   } catch (err) {
     return next(err)
+  }
+
+  // Same contract as GET /api/attempts: quiz_id/user_id filter UUID columns
+  // and status filters a CHECK enum, so a malformed value is a 400 here
+  // rather than a Postgres error surfacing as a 500.
+  if (req.query.quiz_id !== undefined && !UUID_RE.test(req.query.quiz_id)) {
+    return next(httpError(400, 'quiz_id must be a UUID'))
+  }
+  if (req.query.user_id !== undefined && !UUID_RE.test(req.query.user_id)) {
+    return next(httpError(400, 'user_id must be a UUID'))
+  }
+  if (req.query.status !== undefined && !ASSIGNMENT_STATUSES.includes(req.query.status)) {
+    return next(httpError(400, `status must be one of: ${ASSIGNMENT_STATUSES.join(', ')}`))
   }
 
   const { page, pageSize } = parsePagination(req.query)

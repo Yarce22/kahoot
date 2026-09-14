@@ -32,6 +32,11 @@ const PLAIN_A = { id: 'admin-a', email: 'a@example.com', role: 'admin', is_activ
 const superToken = () => signToken({ sub: SUPER.id, email: SUPER.email })
 const plainAToken = () => signToken({ sub: PLAIN_A.id, email: PLAIN_A.email })
 
+// quiz_attempts.user_id / .quiz_id are UUID columns, so the filter fixtures
+// must be UUID-shaped — a 'u1' would be rejected by the route's validation
+// exactly as Postgres would reject it.
+const USER_UUID = '11111111-2222-4333-8444-555555555555'
+
 // --- GET / ---
 
 test('GET /api/attempts — a plain admin is scoped to their own store', async () => {
@@ -67,22 +72,126 @@ test('GET /api/attempts — an explicit conflicting store filter returns 403', a
 // spec: Filter by user across quizzes
 test('GET /api/attempts — filters by user_id, across quizzes', async () => {
   const rows = [
-    { id: 'a1', quiz_id: 'q1', cycle: 1, status: 'completed', total_questions: 5, correct_count: 4, score_percent: 80, started_at: 'x', submitted_at: 'y', quiz: { id: 'q1', title: 'Quiz 1' }, user: { id: 'u1', full_name: 'U1', email: 'u1@x.com', punto_de_venta: 'Cerritos' } }
+    { id: 'a1', quiz_id: 'q1', cycle: 1, status: 'completed', total_questions: 5, correct_count: 4, score_percent: 80, started_at: 'x', submitted_at: 'y', quiz: { id: 'q1', title: 'Quiz 1' }, user: { id: USER_UUID, full_name: 'U1', email: 'u1@x.com', punto_de_venta: 'Cerritos' } }
   ]
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: SUPER, error: null } },
-    { table: 'quiz_attempts', result: { data: rows, error: null } }
+    { table: 'quiz_attempts', result: { data: rows, error: null, count: 1 } }
   ])
   try {
     const res = await request(buildApp())
-      .get('/api/attempts?user_id=u1')
+      .get(`/api/attempts?user_id=${USER_UUID}`)
       .set('Authorization', `Bearer ${superToken()}`)
     assert.equal(res.status, 200)
     assert.equal(res.body.attempts.length, 1)
     assert.equal(res.body.attempts[0].scorePercent, 80)
     assert.equal(res.body.attempts[0].user.fullName, 'U1')
     const eqCall = restore.calls.find((c) => c.table === 'quiz_attempts' && c.method === 'eq' && c.args[0] === 'user_id')
-    assert.deepEqual(eqCall.args, ['user_id', 'u1'])
+    assert.deepEqual(eqCall.args, ['user_id', USER_UUID])
+  } finally {
+    restore()
+  }
+})
+
+// Every one of these used to be forwarded to Postgres verbatim: `cycle=abc`
+// became Number('abc') = NaN inside .eq(), and quiz_id/user_id/status were
+// never checked against the UUID columns or the CHECK enum they filter.
+test('GET /api/attempts — an invalid filter value returns 400 instead of reaching Postgres', async () => {
+  const cases = [
+    'cycle=abc',
+    'cycle=1.5',
+    'cycle=',
+    'quiz_id=not-a-uuid',
+    `user_id=${USER_UUID}x`,
+    'status=bogus',
+    'status=pending', // a quiz_assignments status, NOT a quiz_attempts one
+    'from=not-a-date',
+    'to=yesterday'
+  ]
+  for (const qs of cases) {
+    const restore = mockSupabaseSequence([
+      { table: 'admins', result: { data: SUPER, error: null } }
+    ])
+    try {
+      const res = await request(buildApp())
+        .get(`/api/attempts?${qs}`)
+        .set('Authorization', `Bearer ${superToken()}`)
+      assert.equal(res.status, 400, qs)
+      assert.equal(restore.calls.some((c) => c.table === 'quiz_attempts'), false, qs)
+    } finally {
+      restore()
+    }
+  }
+})
+
+test('GET /api/attempts — every valid attempt status is accepted', async () => {
+  for (const status of ['in_progress', 'completed', 'expired']) {
+    const restore = mockSupabaseSequence([
+      { table: 'admins', result: { data: SUPER, error: null } },
+      { table: 'quiz_attempts', result: { data: [], error: null, count: 0 } }
+    ])
+    try {
+      const res = await request(buildApp())
+        .get(`/api/attempts?status=${status}`)
+        .set('Authorization', `Bearer ${superToken()}`)
+      assert.equal(res.status, 200, status)
+      const eqCall = restore.calls.find((c) => c.table === 'quiz_attempts' && c.method === 'eq' && c.args[0] === 'status')
+      assert.deepEqual(eqCall.args, ['status', status])
+    } finally {
+      restore()
+    }
+  }
+})
+
+test('GET /api/attempts — a valid cycle reaches the query as a number', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } },
+    { table: 'quiz_attempts', result: { data: [], error: null, count: 0 } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .get('/api/attempts?cycle=3')
+      .set('Authorization', `Bearer ${superToken()}`)
+    assert.equal(res.status, 200)
+    const eqCall = restore.calls.find((c) => c.table === 'quiz_attempts' && c.method === 'eq' && c.args[0] === 'cycle')
+    assert.deepEqual(eqCall.args, ['cycle', 3])
+  } finally {
+    restore()
+  }
+})
+
+// spec (route contract): GET /?...&from&to&... filters started_at
+test('GET /api/attempts — from/to bound started_at', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } },
+    { table: 'quiz_attempts', result: { data: [], error: null, count: 0 } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .get('/api/attempts?from=2026-01-01T00:00:00.000Z&to=2026-02-01T00:00:00.000Z')
+      .set('Authorization', `Bearer ${superToken()}`)
+    assert.equal(res.status, 200)
+    const gte = restore.calls.find((c) => c.table === 'quiz_attempts' && c.method === 'gte')
+    const lte = restore.calls.find((c) => c.table === 'quiz_attempts' && c.method === 'lte')
+    assert.deepEqual(gte.args, ['started_at', '2026-01-01T00:00:00.000Z'])
+    assert.deepEqual(lte.args, ['started_at', '2026-02-01T00:00:00.000Z'])
+  } finally {
+    restore()
+  }
+})
+
+test('GET /api/attempts — from/to are optional and independent', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: SUPER, error: null } },
+    { table: 'quiz_attempts', result: { data: [], error: null, count: 0 } }
+  ])
+  try {
+    const res = await request(buildApp())
+      .get('/api/attempts?from=2026-01-01')
+      .set('Authorization', `Bearer ${superToken()}`)
+    assert.equal(res.status, 200)
+    assert.ok(restore.calls.find((c) => c.table === 'quiz_attempts' && c.method === 'gte'))
+    assert.equal(restore.calls.some((c) => c.table === 'quiz_attempts' && c.method === 'lte'), false)
   } finally {
     restore()
   }

@@ -327,6 +327,43 @@ test('GET /api/assignments — page_size is capped so the in() fan-out stays bou
   }
 })
 
+// Same unvalidated-query-param pattern as GET /api/attempts: quiz_id/user_id
+// filter UUID columns and status filters a CHECK enum, none of which were
+// checked before being handed to Postgres.
+test('GET /api/assignments — an invalid filter value returns 400 instead of reaching Postgres', async () => {
+  for (const qs of ['quiz_id=not-a-uuid', 'user_id=nope', 'status=expired', 'status=bogus']) {
+    const restore = mockSupabaseSequence([
+      { table: 'admins', result: { data: SUPER, error: null } }
+    ])
+    try {
+      const res = await request(buildApp())
+        .get(`/api/assignments?${qs}`)
+        .set('Authorization', `Bearer ${superToken()}`)
+      assert.equal(res.status, 400, qs)
+      assert.equal(restore.calls.some((c) => c.table === 'quiz_assignments'), false, qs)
+    } finally {
+      restore()
+    }
+  }
+})
+
+test('GET /api/assignments — every valid assignment status is accepted', async () => {
+  for (const status of ['pending', 'completed']) {
+    const restore = mockSupabaseSequence([
+      { table: 'admins', result: { data: SUPER, error: null } },
+      { table: 'quiz_assignments', result: { data: [], error: null, count: 0 } }
+    ])
+    try {
+      const res = await request(buildApp())
+        .get(`/api/assignments?status=${status}`)
+        .set('Authorization', `Bearer ${superToken()}`)
+      assert.equal(res.status, 200, status)
+    } finally {
+      restore()
+    }
+  }
+})
+
 test('GET /api/assignments — a plain admin requesting another store gets 403', async () => {
   const restore = mockSupabaseSequence([
     { table: 'admins', result: { data: PLAIN_A, error: null } }
