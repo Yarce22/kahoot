@@ -5,24 +5,43 @@ import { requireAdmin } from '../middleware/requireAdmin.js'
 import { authGate } from '../middleware/jwtGate.js'
 import { requireSuperadmin } from '../middleware/requireSuperadmin.js'
 import { httpError } from '../lib/httpError.js'
+import { isUniqueViolation, isNoRowsReturned } from '../lib/pgErrors.js'
+import { PUNTOS_DE_VENTA } from '../lib/puntosDeVenta.js'
 
 export const adminsRouter = Router()
 
 const BCRYPT_COST = 12
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const VALID_ROLES = ['admin', 'superadmin']
-const PG_UNIQUE_VIOLATION = '23505'
+const PUNTO_DE_VENTA_ERROR = `punto_de_venta must be one of: ${PUNTOS_DE_VENTA.join(', ')}`
+const NAME_MAX_LENGTH = 200
+
+// name is optional everywhere (no NOT NULL, unlike punto_de_venta) — mirrors
+// quizzes.title's length guard, but nothing requires a value at all. Returns
+// { error } on a validation failure, or { value } with the normalized value
+// (trimmed, empty string collapsed to null) otherwise. Shared by POST and
+// PATCH so the two routes can't drift on what counts as a valid name.
+function normalizeName(name) {
+  if (name === undefined) return { value: undefined }
+  if (typeof name !== 'string') return { error: 'name must be a string' }
+  const trimmed = name.trim()
+  if (trimmed.length > NAME_MAX_LENGTH) return { error: `name must be ${NAME_MAX_LENGTH} characters or fewer` }
+  return { value: trimmed === '' ? null : trimmed }
+}
 
 // Every route here is superadmin-only. requireAdmin keeps the legacy token
 // gate honest under AUTH_MODE=legacy; authGate attaches req.admin under jwt;
 // requireSuperadmin enforces the role.
 const superadminOnly = [requireAdmin, authGate, requireSuperadmin]
 
-// GET /api/admins — list every admin (superadmin only).
+// GET /api/admins — list every admin (superadmin only). punto_de_venta is
+// part of the list so a superadmin can see which accounts still lack a store
+// (migration 010 refuses to run while any of them is NULL).
 adminsRouter.get('/', ...superadminOnly, async (req, res, next) => {
   const { data, error } = await supabase
     .from('admins')
-    .select('id, email, role, is_active, created_at')
+    .select('id, email, role, is_active, punto_de_venta, name, created_at')
     .order('created_at', { ascending: true })
 
   if (error) return next(error)
@@ -31,11 +50,17 @@ adminsRouter.get('/', ...superadminOnly, async (req, res, next) => {
 
 // POST /api/admins — create an admin with a chosen role (superadmin only).
 adminsRouter.post('/', ...superadminOnly, async (req, res, next) => {
-  const { email, password, role = 'admin' } = req.body ?? {}
+  const { email, password, role = 'admin', punto_de_venta, name } = req.body ?? {}
 
   if (!email || !EMAIL_RE.test(email)) return next(httpError(400, 'A valid email is required'))
   if (!password) return next(httpError(400, 'password is required'))
   if (!VALID_ROLES.includes(role)) return next(httpError(400, 'role must be admin or superadmin'))
+  // admins.punto_de_venta is NOT NULL with no default (migration 010) and
+  // there is no safe fallback store — so it is required here, never guessed.
+  if (!PUNTOS_DE_VENTA.includes(punto_de_venta)) return next(httpError(400, PUNTO_DE_VENTA_ERROR))
+
+  const normalizedName = normalizeName(name)
+  if (normalizedName.error) return next(httpError(400, normalizedName.error))
 
   // Fast-path pre-check (not the source of truth — the UNIQUE constraint is;
   // its violation is mapped to 409 below).
@@ -51,8 +76,8 @@ adminsRouter.post('/', ...superadminOnly, async (req, res, next) => {
 
   const { data: admin, error } = await supabase
     .from('admins')
-    .insert({ email, password_hash: passwordHash, role })
-    .select('id, email, role, is_active')
+    .insert({ email, password_hash: passwordHash, role, punto_de_venta, name: normalizedName.value ?? null })
+    .select('id, email, role, is_active, punto_de_venta, name')
     .single()
 
   if (error) {
@@ -63,15 +88,22 @@ adminsRouter.post('/', ...superadminOnly, async (req, res, next) => {
   res.status(201).json(admin)
 })
 
-// PATCH /api/admins/:id — change an admin's role and/or active status
-// (superadmin only). Guards against self-lockout and losing the last
-// active superadmin.
+// PATCH /api/admins/:id — change an admin's role, active status,
+// punto_de_venta and/or name (superadmin only). Guards against self-lockout
+// and losing the last active superadmin.
+//
+// punto_de_venta is here because migration 010 flips the column to NOT NULL
+// and refuses to run while any admin row is still NULL: this is the API path
+// an operator uses to perform that manual backfill. name (migration 015)
+// travels the same way for the same reason as punto_de_venta below: the edit
+// popup submits role + punto_de_venta + name together, and it must be one
+// write, not several.
 adminsRouter.patch('/:id', ...superadminOnly, async (req, res, next) => {
   const { id } = req.params
-  const { role, is_active } = req.body ?? {}
+  const { role, is_active, punto_de_venta, name } = req.body ?? {}
 
-  if (role === undefined && is_active === undefined) {
-    return next(httpError(400, 'Provide role and/or is_active'))
+  if (role === undefined && is_active === undefined && punto_de_venta === undefined && name === undefined) {
+    return next(httpError(400, 'Provide role, is_active, punto_de_venta and/or name'))
   }
   if (role !== undefined && !VALID_ROLES.includes(role)) {
     return next(httpError(400, 'role must be admin or superadmin'))
@@ -79,6 +111,27 @@ adminsRouter.patch('/:id', ...superadminOnly, async (req, res, next) => {
   if (is_active !== undefined && typeof is_active !== 'boolean') {
     return next(httpError(400, 'is_active must be a boolean'))
   }
+  if (punto_de_venta !== undefined && !PUNTOS_DE_VENTA.includes(punto_de_venta)) {
+    return next(httpError(400, PUNTO_DE_VENTA_ERROR))
+  }
+  const normalizedName = normalizeName(name)
+  if (normalizedName.error) return next(httpError(400, normalizedName.error))
+
+  // admins.id is a uuid column, so a malformed `:id` reaches Postgres as an
+  // UNCASTABLE literal (22P02) — NOT as PostgREST's no-rows signal — and BOTH
+  // branches below mishandled it: the RPC's error text matches neither
+  // 'admin_not_found' nor 'last_active_superadmin' and fell through to the
+  // generic `next(error)`, while the update branch's 22P02 is not PGRST116 so
+  // `isNoRowsReturned` was false and it fell through too. Either way: 500.
+  //
+  // A missing or malformed id in the URL (an unset client-side ref serialized
+  // as the literal string 'undefined', say) is a routine client mistake, not a
+  // database failure, so it answers the SAME 404 a well-formed unknown id does,
+  // with the SAME message — the guard assignments.js DELETE /:id, attempts.js
+  // GET /:id and users.js PATCH /:id already apply, on the handler that was
+  // missed. It sits after the body validation (so a malformed BODY still
+  // reports its own 400) and before every write of either branch.
+  if (!UUID_RE.test(id)) return next(httpError(404, 'Admin not found'))
 
   // Deactivating your own account logs you out instantly (requireAuth rejects
   // inactive admins) — always a footgun, so block it outright. Self-demotion
@@ -87,38 +140,91 @@ adminsRouter.patch('/:id', ...superadminOnly, async (req, res, next) => {
     return next(httpError(400, 'You cannot deactivate your own account'))
   }
 
-  // The update + last-active-superadmin invariant runs inside a DB function
-  // serialized by an advisory lock (migration 005), so concurrent PATCHes
-  // can't race it into leaving zero active superadmins. It raises
-  // 'admin_not_found' / 'last_active_superadmin', mapped to 404 / 409 here.
-  const { data, error } = await supabase.rpc('update_admin_role_status', {
-    target_id: id,
-    new_role: role ?? null,
-    new_active: is_active ?? null
-  })
+  let updated = null
 
-  if (error) {
-    // The raised message can surface in message/details/hint depending on the
-    // PostgREST version — check all three.
-    const text = `${error.message ?? ''} ${error.details ?? ''} ${error.hint ?? ''}`
-    if (text.includes('last_active_superadmin')) {
-      return next(httpError(409, 'Cannot demote or deactivate the last active superadmin'))
+  if (role !== undefined || is_active !== undefined) {
+    // The update + last-active-superadmin invariant runs inside a DB function
+    // serialized by an advisory lock (migration 005), so concurrent PATCHes
+    // can't race it into leaving zero active superadmins. It raises
+    // 'admin_not_found' / 'last_active_superadmin', mapped to 404 / 409 here.
+    const { data, error } = await supabase.rpc('update_admin_role_status', {
+      target_id: id,
+      new_role: role ?? null,
+      new_active: is_active ?? null,
+      // Carried INSIDE the same locked transaction (migration 011) rather than
+      // as a follow-up write: applying the role/status change first and
+      // punto_de_venta second meant a failure of the second left the first
+      // already committed while the caller saw a total failure. NULL means
+      // "leave unchanged" here, same as new_role/new_active.
+      new_punto_de_venta: punto_de_venta ?? null,
+      // name (migration 015) rides the same transaction for the same reason.
+      // clear_name disambiguates "not provided" from "explicitly blanked" —
+      // new_name alone can't, since COALESCE treats both as SQL NULL, which
+      // would silently keep the old name on a combined role+emptied-name
+      // submit (exactly what the edit popup sends).
+      new_name: name === undefined ? null : normalizedName.value,
+      clear_name: name !== undefined && normalizedName.value === null
+    })
+
+    if (error) {
+      // The raised message can surface in message/details/hint depending on the
+      // PostgREST version — check all three.
+      const text = `${error.message ?? ''} ${error.details ?? ''} ${error.hint ?? ''}`
+      if (text.includes('last_active_superadmin')) {
+        return next(httpError(409, 'Cannot demote or deactivate the last active superadmin'))
+      }
+      if (text.includes('admin_not_found')) {
+        return next(httpError(404, 'Admin not found'))
+      }
+      return next(error)
     }
-    if (text.includes('admin_not_found')) {
+
+    // The function RETURNS the full admins row (incl. password_hash) — expose
+    // only the safe fields.
+    updated = Array.isArray(data) ? data[0] : data
+
+    // The function RAISEs 'admin_not_found' rather than returning nothing, so
+    // this should be unreachable — but if the RPC ever resolves `{ data: null }`
+    // or `{ data: [] }`, `updated.id` below throws and the caller gets a raw 500
+    // carrying an internal message. An absent row is a 404 here, exactly like
+    // the raised 'admin_not_found' above.
+    if (!updated) return next(httpError(404, 'Admin not found'))
+
+  // punto_de_venta and/or name ALONE is a plain column update: neither carries
+  // the last-active-superadmin invariant the RPC exists to serialize. Combined
+  // with role/is_active they are NOT reachable here — the RPC above already
+  // applied them atomically, and re-writing them separately is what made a
+  // combined PATCH partially mutating.
+  } else if (punto_de_venta !== undefined || name !== undefined) {
+    const changes = {}
+    if (punto_de_venta !== undefined) changes.punto_de_venta = punto_de_venta
+    if (name !== undefined) changes.name = normalizedName.value
+
+    const { data: row, error: storeError } = await supabase
+      .from('admins')
+      .update(changes)
+      .eq('id', id)
+      .select('id, email, role, is_active, punto_de_venta, name')
+      .single()
+
+    // `.single()` over zero rows resolves as a PGRST116 ERROR (which carries no
+    // `.status`, so errorHandler would fall through to a raw 500) — never as
+    // `{ data: null, error: null }`. An unknown id is a 404 here, exactly like
+    // the RPC's 'admin_not_found' above; any OTHER error is a real failure and
+    // must not be disguised as one.
+    if (isNoRowsReturned(storeError) || (!storeError && !row)) {
       return next(httpError(404, 'Admin not found'))
     }
-    return next(error)
+    if (storeError) return next(storeError)
+    updated = row
   }
 
-  // The function RETURNS the full admins row (incl. password_hash) — expose
-  // only the safe fields.
-  const updated = Array.isArray(data) ? data[0] : data
-  res.json({ id: updated.id, email: updated.email, role: updated.role, is_active: updated.is_active })
+  res.json({
+    id: updated.id,
+    email: updated.email,
+    role: updated.role,
+    is_active: updated.is_active,
+    punto_de_venta: updated.punto_de_venta,
+    name: updated.name
+  })
 })
-
-function isUniqueViolation(error) {
-  if (!error) return false
-  if (error.code === PG_UNIQUE_VIOLATION) return true
-  const text = `${error.message ?? ''} ${error.details ?? ''}`.toLowerCase()
-  return text.includes('duplicate key') || text.includes('unique constraint') || text.includes('already exists')
-}

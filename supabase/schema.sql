@@ -10,21 +10,36 @@
 --   UPDATE admins SET role = 'superadmin'
 --   WHERE id = (SELECT id FROM admins ORDER BY created_at ASC, id ASC LIMIT 1);
 -- (The migration path handles this automatically — see migration 004.)
+-- punto_de_venta is NOT NULL here (final state, post migration 010) — on a
+-- fresh install every admin is created with a real store from day one, so
+-- there is no backfill window to represent.
+-- name is nullable and optional (migration 015) — unlike punto_de_venta,
+-- nothing requires every admin to have one, so there is no backfill window
+-- for it either. Length check mirrors quizzes.title's.
 CREATE TABLE admins (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'admin' CHECK (role IN ('admin', 'superadmin')),
   is_active BOOLEAN NOT NULL DEFAULT true,
+  punto_de_venta TEXT NOT NULL CHECK (punto_de_venta IN
+    ('Cerritos', 'Campestre', 'Centenario', 'Circunvalar', 'Laureles')),
+  name TEXT CHECK (name IS NULL OR char_length(name) <= 200),
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
 -- quizzes
+-- total_time_seconds NULL = this quiz cannot be assigned asynchronously
+-- (see migration 009); the per-question time_limit_seconds below stays
+-- live-PIN-mode-only and is unaffected. assignment_cycle is the quiz-level
+-- high-water mark bumped on every reactivation (see reactivate_quiz_assignments).
 CREATE TABLE quizzes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title TEXT NOT NULL CHECK (char_length(title) <= 200),
   description TEXT,
   owner_id UUID NOT NULL REFERENCES admins(id),
+  total_time_seconds INT CHECK (total_time_seconds IS NULL OR total_time_seconds BETWEEN 60 AND 7200),
+  assignment_cycle INT NOT NULL DEFAULT 1,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -112,10 +127,24 @@ CREATE INDEX idx_password_reset_tokens_admin ON password_reset_tokens(admin_id);
 -- Race-safe admin role/status update (see migration 005). Serializes
 -- concurrent changes with an advisory lock so the system can never be left
 -- with zero active superadmins. Raises 'admin_not_found' / 'last_active_superadmin'.
+-- new_punto_de_venta, new_name and clear_name are part of the signature here
+-- (final state, post migration 015): PATCH /api/admins/:id ALWAYS calls this
+-- RPC with all six named arguments, so a database provisioned from an
+-- earlier-arity version would fail every role/is_active PATCH with PGRST202.
+-- NULL means "leave unchanged" (COALESCE) for new_role, new_active and
+-- new_punto_de_venta — punto_de_venta is NOT NULL so the function can never
+-- be used to blank it. name IS nullable, and clearing it is a legitimate
+-- operation the edit popup exposes, but new_name alone can't tell "not
+-- provided" apart from "clear it" (both arrive as SQL NULL) — clear_name is
+-- the explicit flag that disambiguates, so a combined role + emptied-name
+-- submit actually clears it instead of silently keeping the old value.
 CREATE OR REPLACE FUNCTION update_admin_role_status(
   target_id uuid,
   new_role text DEFAULT NULL,
-  new_active boolean DEFAULT NULL
+  new_active boolean DEFAULT NULL,
+  new_punto_de_venta text DEFAULT NULL,
+  new_name text DEFAULT NULL,
+  clear_name boolean DEFAULT false
 )
 RETURNS admins
 LANGUAGE plpgsql
@@ -127,7 +156,9 @@ BEGIN
 
   UPDATE admins
      SET role = COALESCE(new_role, role),
-         is_active = COALESCE(new_active, is_active)
+         is_active = COALESCE(new_active, is_active),
+         punto_de_venta = COALESCE(new_punto_de_venta, punto_de_venta),
+         name = CASE WHEN clear_name THEN NULL ELSE COALESCE(new_name, name) END
    WHERE id = target_id
   RETURNING * INTO result;
 
@@ -142,5 +173,206 @@ BEGIN
   END IF;
 
   RETURN result;
+END;
+$$;
+
+-- ============================================================
+-- Usuario accounts, punto de venta scoping, async quiz attempts
+-- (see migration 009 / migration 010)
+--
+-- A usuario is a distinct account kind, not an admins.role value: it must
+-- never own a quiz (quizzes.owner_id references admins only) nor be counted
+-- by the last-active-superadmin guard above. Live PIN mode (game_sessions,
+-- players, player_answers, questions.time_limit_seconds) is completely
+-- untouched by this section.
+-- ============================================================
+
+-- usuario accounts. Mirrors admins' bcrypt-hash + is_active soft-delete
+-- shape (a hard delete would orphan assignments/attempts).
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  full_name TEXT NOT NULL,
+  punto_de_venta TEXT NOT NULL CHECK (punto_de_venta IN
+    ('Cerritos', 'Campestre', 'Centenario', 'Circunvalar', 'Laureles')),
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_by UUID REFERENCES admins(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX idx_users_punto_de_venta ON users(punto_de_venta);
+
+-- quiz <-> user assignments. UNIQUE (quiz_id, user_id) keeps exactly one
+-- live row per pair — a reactivation advances `cycle` in place instead of
+-- inserting a duplicate.
+CREATE TABLE quiz_assignments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  quiz_id UUID NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  cycle INT NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed')),
+  assigned_by UUID REFERENCES admins(id) ON DELETE SET NULL,
+  assigned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ,
+  UNIQUE (quiz_id, user_id)
+);
+
+CREATE INDEX idx_quiz_assignments_user_status ON quiz_assignments(user_id, status);
+CREATE INDEX idx_quiz_assignments_quiz_status ON quiz_assignments(quiz_id, status);
+
+-- Attempts. UNIQUE (assignment_id, cycle) enforces "one attempt per
+-- assignment per cycle" as a DATABASE invariant. No pass/fail column exists
+-- anywhere — only correct_count/total_questions/score_percent. expires_at
+-- snapshots started_at + time_budget_seconds so a mid-attempt quiz edit can
+-- neither shorten nor extend it.
+CREATE TABLE quiz_attempts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  assignment_id UUID NOT NULL REFERENCES quiz_assignments(id) ON DELETE CASCADE,
+  quiz_id UUID NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  cycle INT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'in_progress'
+    CHECK (status IN ('in_progress', 'completed', 'expired')),
+  time_budget_seconds INT NOT NULL,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  submitted_at TIMESTAMPTZ,
+  total_questions INT,
+  correct_count INT,
+  score_percent INT,
+  UNIQUE (assignment_id, cycle)
+);
+
+CREATE INDEX idx_quiz_attempts_user ON quiz_attempts(user_id, status);
+CREATE INDEX idx_quiz_attempts_quiz ON quiz_attempts(quiz_id, status);
+
+-- Per-question answers. Mirrors player_answers' conventions verbatim so the
+-- scoring helpers stay reusable: for type 'multiple' the picks are stored as
+-- comma-joined option TEXTS in answer_text with selected_option_id NULL.
+-- UNIQUE (attempt_id, question_id) makes the per-answer write an upsert.
+CREATE TABLE quiz_attempt_answers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  attempt_id UUID NOT NULL REFERENCES quiz_attempts(id) ON DELETE CASCADE,
+  question_id UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+  answer_text TEXT,
+  selected_option_id UUID REFERENCES answer_options(id) ON DELETE SET NULL,
+  is_correct BOOLEAN NOT NULL DEFAULT false,
+  time_taken_ms INT,
+  answered_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (attempt_id, question_id)
+);
+
+CREATE INDEX idx_quiz_attempt_answers_attempt ON quiz_attempt_answers(attempt_id);
+
+-- Reactivation, atomically (see migrations 009 and 012). Bumping the quiz
+-- high-water mark and re-cycling its assignments are two statements and
+-- supabase-js has no client-side transaction, so they live in one
+-- advisory-locked function.
+-- scope_punto_de_venta NULL = superadmin (every assignment on the quiz); a
+-- value = that store only (defense-in-depth re-filter for non-superadmins).
+CREATE OR REPLACE FUNCTION reactivate_quiz_assignments(
+  target_quiz_id uuid,
+  target_user_ids uuid[] DEFAULT NULL,
+  scope_punto_de_venta text DEFAULT NULL
+)
+RETURNS TABLE (assignment_id uuid, new_cycle int)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  next_cycle INT;
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtext('quiz_assignment_cycle:' || target_quiz_id::text));
+
+  UPDATE quizzes
+     SET assignment_cycle = assignment_cycle + 1
+   WHERE id = target_quiz_id
+  RETURNING assignment_cycle INTO next_cycle;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'quiz_not_found';
+  END IF;
+
+  -- In-progress attempts are intentionally NOT force-expired: they keep
+  -- their old cycle, finish normally, and stay queryable as history.
+  RETURN QUERY
+  UPDATE quiz_assignments a
+     SET cycle = next_cycle,
+         status = 'pending',
+         completed_at = NULL
+    FROM users u
+   WHERE a.user_id = u.id
+     AND a.quiz_id = target_quiz_id
+     AND (target_user_ids IS NULL OR a.user_id = ANY(target_user_ids))
+     AND (scope_punto_de_venta IS NULL OR u.punto_de_venta = scope_punto_de_venta)
+     -- is_active = false is this table's soft-delete. A deactivated usuario
+     -- cannot log in, so re-opening their assignment creates a row that can
+     -- never be completed — the same reason POST /api/assignments refuses to
+     -- create one. Not a scoping rule, so it binds a superadmin too. The rule
+     -- lives here rather than in the route because an omitted user_ids means
+     -- "every assignment on the quiz": the route names no users to filter.
+     AND u.is_active
+  RETURNING a.id, a.cycle;
+END;
+$$;
+
+-- Attempt completion, atomically (see migrations 013 and 014). Submitting
+-- writes both quiz_attempts (totals + status) and quiz_assignments (status +
+-- completed_at); supabase-js has no client-side transaction, so a failure
+-- between the two left the attempt 'completed' while the assignment stayed
+-- 'pending' — and the client's retry was then blocked by the first write's own
+-- already-submitted guard. One function makes both writes atomic.
+-- target_cycle scopes the ASSIGNMENT update: a reactivation bumps the
+-- assignment to a new cycle while deliberately leaving in-progress attempts on
+-- their old one, so a stale-cycle submit must never complete the current cycle.
+-- Zero matched rows there is the correct outcome, not an error.
+-- The assignment write happens ONLY for new_status = 'completed' (migration
+-- 014). The resume path finalizes a past-due attempt through this same
+-- function with new_status = 'expired', and an expiry discharges no
+-- obligation: quiz_assignments admits only 'pending'/'completed', so the row is
+-- left untouched and stays 'pending' on the admin roster. The admin still sees
+-- what happened through the per-assignment attemptStatus that
+-- GET /api/assignments derives from the current-cycle attempt.
+CREATE OR REPLACE FUNCTION complete_quiz_attempt(
+  target_attempt_id uuid,
+  target_user_id uuid,
+  target_cycle int,
+  new_status text,
+  new_submitted_at timestamptz,
+  new_total_questions int,
+  new_correct_count int,
+  new_score_percent int
+)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  target_assignment_id uuid;
+BEGIN
+  UPDATE quiz_attempts
+     SET status = new_status,
+         submitted_at = new_submitted_at,
+         total_questions = new_total_questions,
+         correct_count = new_correct_count,
+         score_percent = new_score_percent
+   WHERE id = target_attempt_id
+     AND user_id = target_user_id
+     AND cycle = target_cycle
+     AND status = 'in_progress'
+  RETURNING assignment_id INTO target_assignment_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'attempt_not_in_progress';
+  END IF;
+
+  -- ONLY a real submit closes out the assignment; an expiry leaves the
+  -- compliance record exactly as it was.
+  IF new_status = 'completed' THEN
+    UPDATE quiz_assignments
+       SET status = 'completed',
+           completed_at = new_submitted_at
+     WHERE id = target_assignment_id
+       AND cycle = target_cycle;
+  END IF;
 END;
 $$;

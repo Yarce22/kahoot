@@ -12,6 +12,11 @@ import { questionsRouter } from './routes/questions.js'
 import { sessionsRouter } from './routes/sessions.js'
 import { authRouter } from './routes/auth.js'
 import { adminsRouter } from './routes/admins.js'
+import { userAuthRouter } from './routes/userAuth.js'
+import { userQuizzesRouter } from './routes/userQuizzes.js'
+import { usersRouter } from './routes/users.js'
+import { assignmentsRouter } from './routes/assignments.js'
+import { attemptsRouter } from './routes/attempts.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import { resolveBootstrapAdminOwnerId } from './lib/bootstrapAdmin.js'
 import { getClientOrigin } from './lib/clientOrigin.js'
@@ -26,22 +31,77 @@ export const io = initIO(httpServer, {
 
 export { getIO }
 
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000
+
+// USER_FLOW_PREFIX — the async (PIN-less) usuario namespace. Note the trailing
+// slash: it keeps the ADMIN-facing '/api/users' out of the match.
+const USER_FLOW_PREFIX = '/api/user/'
+
+// USER_FLOW_MAX — a separate, much larger budget for /api/user/*, because the
+// two namespaces have completely different legitimate request shapes.
+//
+// The global 100/15min below is sized for an admin's occasional API calls. The
+// usuario flow is chatty BY DESIGN (design D7: answers are recorded
+// incrementally, one POST per answer, so a browser crash loses nothing), so one
+// full attempt costs roughly `question_count + 5` requests — start + one POST
+// per answer + submit + result, plus the GET /quizzes that brackets it. A
+// 30-question quiz is ~35, and an answer may legitimately be re-sent (the write
+// is an upsert precisely so a usuario can change an answer before submitting).
+//
+// The default key is req.ip, and a punto de venta NATs its entire staff behind
+// ONE public IP — so an IP-keyed budget here is a STORE-WIDE budget, not a
+// per-user one. It must therefore cover a store's worth of simultaneous takers:
+// 25 x 40 = 1000.
+//
+// Undersizing this is not degraded service, it is terminal: a 429 landing
+// mid-attempt leaves the attempt in_progress with expires_at still running, and
+// UNIQUE (assignment_id, cycle) blocks a fresh start — unrecoverable without an
+// admin reactivation. Removing the limit instead is not an option either: these
+// are write-heavy endpoints that still need abuse protection.
+export const USER_FLOW_MAX = 25 * 40
+
+// Exported so tests can call the documented `resetKey()` API between cases —
+// same reason auth.js exports its two limiters.
+export const userFlowLimiter = rateLimit({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max: USER_FLOW_MAX,
+  standardHeaders: true,
+  legacyHeaders: false
+})
+
+export const apiLimiter = rateLimit({
+  windowMs: RATE_LIMIT_WINDOW_MS,
   max: 100,
+  // /api/user/* is metered by userFlowLimiter instead — without this skip the
+  // global 100 would still be the binding constraint and the separate budget
+  // above would be decorative. `originalUrl` (never rewritten by the router) is
+  // used rather than `req.path`, which a mounted middleware sees stripped of
+  // its mount prefix.
+  skip: (req) => req.originalUrl.startsWith(USER_FLOW_PREFIX),
   standardHeaders: true,
   legacyHeaders: false
 })
 
 app.use(cors({ origin: getClientOrigin() }))
 app.use(express.json())
-app.use('/api', limiter)
+app.use(USER_FLOW_PREFIX, userFlowLimiter)
+app.use('/api', apiLimiter)
 
 app.use('/api/auth', authRouter)
 app.use('/api/admins', adminsRouter)
 app.use('/api/quizzes', quizzesRouter)
 app.use('/api', questionsRouter)
 app.use('/api/sessions', sessionsRouter)
+
+// Async (PIN-less) usuario flow — every one of these five routers requires
+// AUTH_MODE=jwt outright (requireJwtMode, design D3) and has no legacy
+// fallback identity; they are purely additive and touch none of the live-PIN
+// wiring above (task 8.2 is the regression proof for that boundary).
+app.use('/api/user', userAuthRouter)
+app.use('/api/user', userQuizzesRouter)
+app.use('/api/users', usersRouter)
+app.use('/api/assignments', assignmentsRouter)
+app.use('/api/attempts', attemptsRouter)
 
 registerSocketHandlers(io)
 

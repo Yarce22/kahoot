@@ -31,6 +31,21 @@
             placeholder="Descripción opcional"
           />
         </div>
+        <div class="field-group">
+          <label class="field-label-sm" for="quiz-total-time">Tiempo total asíncrono (min)</label>
+          <input
+            id="quiz-total-time"
+            v-model.number="form.total_time_minutes"
+            class="input-sm"
+            type="number"
+            min="1"
+            max="120"
+            placeholder="Vacío = solo en vivo"
+          />
+          <p style="color: var(--text-muted); font-size: 12px; font-family: 'Nunito', sans-serif; margin: 0;">
+            Entre 1 y 120 minutos. Vacío = el cuestionario no puede asignarse (solo partidas en vivo).
+          </p>
+        </div>
         <div style="grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
           <button type="submit" class="btn btn-primary btn-sm" :disabled="saving">
             {{ saving ? 'Guardando…' : 'Guardar cuestionario' }}
@@ -328,7 +343,7 @@ const quizId = ref(route.params.id || null)
 // isNew would stay true and create a duplicate on the next save.
 const isNew = computed(() => !quizId.value)
 
-const form = ref({ title: '', description: '' })
+const form = ref({ title: '', description: '', total_time_minutes: '' })
 const saving = ref(false)
 const quizError = ref('')
 
@@ -352,6 +367,14 @@ onMounted(async () => {
     if (store.activeQuiz) {
       form.value.title = store.activeQuiz.title
       form.value.description = store.activeQuiz.description || ''
+      // '' (not null) so v-model.number renders an empty input rather than
+      // the literal text "null" — the same shape a brand-new quiz starts with.
+      // The stored value is SECONDS (the DB/API unit); the field is MINUTES
+      // (the UI unit) — rounded, since a value set before this field existed
+      // (or via the API directly) need not be an exact multiple of 60.
+      form.value.total_time_minutes = store.activeQuiz.total_time_seconds != null
+        ? Math.round(store.activeQuiz.total_time_seconds / 60)
+        : ''
       questions.value = store.activeQuiz.questions || []
     }
   }
@@ -361,12 +384,23 @@ async function saveQuiz() {
   saving.value = true
   quizError.value = ''
   try {
+    // The field is MINUTES (the UI unit); the API is SECONDS. v-model.number
+    // on an EMPTIED number input yields '', not null — sending that straight
+    // through fails the server's Number.isInteger check (400), so an admin
+    // who leaves the field blank must get "no timer" (null), not an error.
+    // total_time_minutes itself is dropped from the payload — the server has
+    // no use for it and only expects total_time_seconds.
+    const { total_time_minutes, ...rest } = form.value
+    const payload = {
+      ...rest,
+      total_time_seconds: total_time_minutes === '' ? null : total_time_minutes * 60
+    }
     if (isNew.value) {
-      const quiz = await store.createQuiz(form.value)
+      const quiz = await store.createQuiz(payload)
       quizId.value = quiz.id
       router.replace(`/admin/quizzes/${quiz.id}`)
     } else {
-      await store.updateQuiz(quizId.value, form.value)
+      await store.updateQuiz(quizId.value, payload)
     }
   } catch (e) {
     quizError.value = e.message

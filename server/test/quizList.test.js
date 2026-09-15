@@ -42,6 +42,31 @@ test('GET /api/quizzes — each quiz carries its question count', async () => {
   }
 })
 
+test('GET /api/quizzes — carries total_time_seconds so the client can tell an assignable quiz apart from one that isn\'t', async () => {
+  const token = signToken({ sub: ADMIN_A.id, email: ADMIN_A.email })
+
+  const rows = [
+    { id: 'q1', title: 'Assignable', description: null, created_at: '2026-07-08T00:00:00Z', total_time_seconds: 600, questions: [{ count: 3 }] },
+    { id: 'q2', title: 'Live-only', description: null, created_at: '2026-07-07T00:00:00Z', total_time_seconds: null, questions: [{ count: 0 }] }
+  ]
+
+  const restore = mockSupabaseSequence([
+    { table: 'admins', result: { data: ADMIN_A, error: null } }, // requireAuth
+    { table: 'quizzes', result: { data: rows, error: null } }     // list handler
+  ])
+  try {
+    const res = await request(app)
+      .get('/api/quizzes')
+      .set('Authorization', `Bearer ${token}`)
+
+    assert.equal(res.status, 200)
+    assert.equal(res.body[0].total_time_seconds, 600)
+    assert.equal(res.body[1].total_time_seconds, null)
+  } finally {
+    restore()
+  }
+})
+
 test('GET /api/quizzes — missing aggregate defaults questionCount to 0', async () => {
   const token = signToken({ sub: ADMIN_A.id, email: ADMIN_A.email })
 
