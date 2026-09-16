@@ -60,10 +60,17 @@
           <button class="btn-icon btn-assign" @click="openAssign(quiz)">
             📌 Asignar
           </button>
+          <button class="btn-icon btn-reactivate" :disabled="reactivatingId === quiz.id" @click="reactivate(quiz)">
+            {{ reactivatingId === quiz.id ? 'Reactivando…' : '🔄 Reactivar' }}
+          </button>
           <button class="btn-icon btn-delete" @click="remove(quiz.id)">
             🗑 Eliminar
           </button>
         </div>
+        <template v-if="reactivateQuizId === quiz.id">
+          <p v-if="reactivateError" class="error-msg" role="alert">{{ reactivateError }}</p>
+          <p v-else-if="reactivateMsg" class="reactivate-msg">{{ reactivateMsg }}</p>
+        </template>
       </div>
     </div>
 
@@ -172,6 +179,11 @@ const assignmentsStore = useAssignmentsStore()
 const startingId = ref(null)
 const startError = ref('')
 
+const reactivatingId = ref(null)
+const reactivateQuizId = ref(null)
+const reactivateMsg = ref('')
+const reactivateError = ref('')
+
 const assigningQuiz = ref(null)
 const assignStoreFilter = ref('')
 const selectedUserIds = ref([])
@@ -200,6 +212,31 @@ async function start(quiz) {
 async function remove(id) {
   if (!confirm('¿Eliminar este cuestionario?')) return
   await store.deleteQuiz(id)
+}
+
+// reactivate — bumps the assignment cycle for EVERY usuario currently
+// assigned to this quiz (completed, expired, or still pending), so they can
+// all take it again. Whole-quiz only, no per-usuario picker: that matches
+// the server's own "omitted user_ids = everyone" contract and the real use
+// case here (periodic re-training), not a one-off single-usuario redo.
+async function reactivate(quiz) {
+  if (reactivatingId.value) return
+  if (!confirm(`¿Reactivar "${quiz.title}"? Todos los usuarios con este examen asignado van a poder rendirlo de nuevo.`)) return
+
+  reactivatingId.value = quiz.id
+  reactivateQuizId.value = quiz.id
+  reactivateMsg.value = ''
+  reactivateError.value = ''
+  try {
+    const { reactivated } = await assignmentsStore.reactivateAssignments({ quiz_id: quiz.id })
+    reactivateMsg.value = reactivated > 0
+      ? `${reactivated} asignación(es) reactivada(s).`
+      : 'Este cuestionario no tenía asignaciones para reactivar.'
+  } catch (e) {
+    reactivateError.value = e.message
+  } finally {
+    reactivatingId.value = null
+  }
 }
 
 // openAssign — no pre-fetch of existing assignments (design decision): the
@@ -354,7 +391,16 @@ function thumbEmoji(idx)    { return EMOJIS[idx % EMOJIS.length] }
 .btn-edit   { background: rgba(61, 207, 207, 0.15);  color: var(--accent-cyan);   border: 1px solid rgba(61, 207, 207, 0.25); }
 .btn-history{ background: rgba(245, 200, 66, 0.15);  color: var(--accent-yellow); border: 1px solid rgba(245, 200, 66, 0.25); }
 .btn-assign { background: rgba(70, 217, 138, 0.15);  color: var(--accent-green);  border: 1px solid rgba(70, 217, 138, 0.25); }
+.btn-reactivate { background: rgba(61, 207, 255, 0.15); color: var(--accent-cyan); border: 1px solid rgba(61, 207, 255, 0.25); }
 .btn-delete { background: rgba(244, 99, 74, 0.15);   color: var(--accent-coral);  border: 1px solid rgba(244, 99, 74, 0.25); }
+
+.reactivate-msg {
+  color: var(--accent-green);
+  font-family: 'Nunito', sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  margin-top: 10px;
+}
 
 /* Floating Action Button */
 .fab {

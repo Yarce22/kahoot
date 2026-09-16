@@ -13,6 +13,16 @@ export const useAssignmentsStore = defineStore('assignments', {
     async createAssignments({ quiz_id, user_ids }) {
       const api = useAdminApi()
       return api.post('/api/assignments', { quiz_id, user_ids })
+    },
+    // reactivateAssignments — POST /api/assignments/reactivate, bumps the
+    // quiz's assignment cycle so every usuario currently assigned to it
+    // (completed, expired, or still pending) can take it again. user_ids is
+    // left undefined here (not just this store's job to offer a picker) —
+    // the server's own contract already treats an omitted user_ids as
+    // "every assignment on the quiz".
+    async reactivateAssignments({ quiz_id }) {
+      const api = useAdminApi()
+      return api.post('/api/assignments/reactivate', { quiz_id })
     }
   }
 })
