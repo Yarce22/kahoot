@@ -95,7 +95,7 @@ function go(q) {
 
 function logout() {
   auth.logout()
-  router.push('/user/login')
+  router.push('/')
 }
 </script>
 

@@ -11,10 +11,11 @@ function requireAdmin(to, from, next) {
 
 // requireUsuario — mirrors requireAdmin exactly, but checks the SEPARATE
 // usuario identity space (own token, own logged-in state) and bounces to
-// /user/login, not /admin/login — an admin session grants no access here
-// and vice versa (design: aud=usuario vs aud=admin are different identities).
+// / (the usuario login lives at the home route), not /admin/login — an
+// admin session grants no access here and vice versa (design: aud=usuario
+// vs aud=admin are different identities).
 function requireUsuario(to, from, next) {
-  if (!useUserAuthStore().isLoggedIn) return next('/user/login')
+  if (!useUserAuthStore().isLoggedIn) return next('/')
   next()
 }
 
@@ -28,7 +29,11 @@ function requireSuperadmin(to, from, next) {
 }
 
 const routes = [
-  { path: '/', component: () => import('../views/HomeView.vue') },
+  // Home IS the usuario login panel — this is the product's primary
+  // audience now (employees with assigned exams), not anonymous PIN
+  // players. The old PIN-join screen moved to /join.
+  { path: '/', component: () => import('../views/user/UserLoginView.vue') },
+  { path: '/join', component: () => import('../views/JoinGameView.vue') },
   { path: '/lobby/:pin', component: () => import('../views/LobbyView.vue') },
   { path: '/game/:pin', component: () => import('../views/GameView.vue') },
   { path: '/results/:pin', component: () => import('../views/ResultsView.vue') },
@@ -36,7 +41,9 @@ const routes = [
   // Usuario-facing routes — own top-level namespace, NOT nested under
   // /admin/, same reasoning that already puts /lobby/:pin and /game/:pin at
   // the top level: usuarios aren't admins.
-  { path: '/user/login', component: () => import('../views/user/UserLoginView.vue') },
+  // Old direct entry point, kept as a redirect for anyone with the URL
+  // bookmarked or linked from an old email/message.
+  { path: '/user/login', redirect: '/' },
   { path: '/user/quizzes', component: () => import('../views/user/UserQuizzesView.vue'), beforeEnter: requireUsuario },
   { path: '/user/quizzes/:assignmentId/attempt', component: () => import('../views/user/UserAttemptView.vue'), beforeEnter: requireUsuario },
   { path: '/user/attempts/:id/result', component: () => import('../views/user/UserResultView.vue'), beforeEnter: requireUsuario },

@@ -316,7 +316,7 @@ html, body, #app {
 
 /* Deliberately NOT named .field-group/.field-label-sm even though that is
    what the auth views used while these rules were copy-pasted into each of
-   them: HomeView already owns a scoped .field-group with different
+   them: JoinGameView already owns a scoped .field-group with different
    semantics (plain margin, no flex column), so promoting those names to
    global would silently restyle the landing page. */
 .auth-field {

@@ -61,10 +61,10 @@
       </form>
     </div>
 
-    <!-- Admin link -->
+    <!-- Usuario login link -->
     <p class="home-footer-link">
-      ¿Sos el host?
-      <router-link to="/admin/login" class="home-admin-link">Accedé al panel de administración</router-link>
+      ¿Tenés un examen asignado?
+      <router-link to="/" class="home-admin-link">Iniciá sesión</router-link>
     </p>
   </div>
 </template>

@@ -3,7 +3,7 @@ import router from '../router/index.js'
 
 // useUserApi — mirrors useAdminApi.js line for line, except it reads the
 // token from userAuth.js (the separate usuario identity space) and, on a
-// 401, redirects to /user/login instead of /admin/login.
+// 401, redirects to / (the usuario login) instead of /admin/login.
 export function useUserApi() {
   const base = import.meta.env.VITE_API_BASE_URL || ''
 
@@ -27,7 +27,7 @@ export function useUserApi() {
     // the usuario back to their own login screen so they can re-authenticate.
     if (res.status === 401) {
       useUserAuthStore().logout()
-      router.push('/user/login')
+      router.push('/')
       throw new Error('Tu sesión expiró. Iniciá sesión de nuevo.')
     }
 

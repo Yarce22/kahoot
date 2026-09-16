@@ -119,7 +119,7 @@ describe('UserQuizzesView', () => {
     expect(url).toContain('page=2')
   })
 
-  it('logging out clears the usuario session and navigates to /user/login', async () => {
+  it('logging out clears the usuario session and navigates to / (the usuario login)', async () => {
     get.mockResolvedValue({ quizzes: [], page: 1, page_size: 25, total: 0 })
     const pinia = createPinia()
     setActivePinia(pinia)
@@ -130,6 +130,6 @@ describe('UserQuizzesView', () => {
     await wrapper.find('.btn-ghost').trigger('click')
 
     expect(useUserAuthStore().isLoggedIn).toBe(false)
-    expect(push).toHaveBeenCalledWith('/user/login')
+    expect(push).toHaveBeenCalledWith('/')
   })
 })
