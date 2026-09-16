@@ -57,6 +57,9 @@ const routes = [
   { path: '/admin/quizzes/:id', component: () => import('../views/admin/QuizEditorView.vue'), beforeEnter: requireAdmin },
   { path: '/admin/quizzes/:id/sessions', component: () => import('../views/admin/QuizSessionsView.vue'), beforeEnter: requireAdmin },
   { path: '/admin/quizzes/:id/sessions/:pin', component: () => import('../views/admin/SessionResultsView.vue'), beforeEnter: requireAdmin },
+  // Async (assigned) exam attempt detail — separate from the PIN session
+  // results above, since a quiz_attempts row has no `pin` to key on.
+  { path: '/admin/quizzes/:id/attempts/:attemptId', component: () => import('../views/admin/AttemptResultView.vue'), beforeEnter: requireAdmin },
   { path: '/admin/sessions/:pin', component: () => import('../views/admin/SessionView.vue'), beforeEnter: requireAdmin },
   { path: '/admin/admins', component: () => import('../views/admin/AdminsView.vue'), beforeEnter: requireSuperadmin },
   // requireAdmin, not requireSuperadmin: usuario management is store-scoped
