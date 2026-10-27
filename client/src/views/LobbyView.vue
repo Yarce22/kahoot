@@ -126,10 +126,10 @@ if (store.nickname && !store.players.find(p => p.nickname === store.nickname)) {
 }
 
 .player-chip.is-me {
-  background: linear-gradient(135deg, rgba(155, 114, 245, 0.3), rgba(61, 207, 207, 0.2));
+  background: linear-gradient(135deg, rgba(198, 113, 57, 0.3), rgba(86, 99, 63, 0.2));
   border-color: var(--accent-purple);
   color: var(--accent-cyan);
-  box-shadow: 0 0 14px rgba(155, 114, 245, 0.3);
+  box-shadow: 0 0 14px rgba(198, 113, 57, 0.3);
 }
 
 .player-count {

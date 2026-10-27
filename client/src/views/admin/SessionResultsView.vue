@@ -63,8 +63,8 @@
                   gap: '10px',
                   padding: '10px 12px',
                   borderRadius: 'var(--radius-md)',
-                  background: ans.is_correct ? 'rgba(70,217,138,0.1)' : ans.is_correct === false ? 'rgba(255,90,90,0.1)' : 'var(--bg-card)',
-                  border: '1px solid ' + (ans.is_correct ? 'rgba(70,217,138,0.3)' : ans.is_correct === false ? 'rgba(255,90,90,0.3)' : 'var(--border)')
+                  background: ans.is_correct ? 'rgba(122, 138, 94,0.1)' : ans.is_correct === false ? 'rgba(140, 73, 26,0.1)' : 'var(--bg-card)',
+                  border: '1px solid ' + (ans.is_correct ? 'rgba(122, 138, 94,0.3)' : ans.is_correct === false ? 'rgba(140, 73, 26,0.3)' : 'var(--border)')
                 }"
               >
                 <span style="font-size: 16px; flex-shrink: 0;">{{ ans.is_correct ? '✅' : ans.is_correct === false ? '❌' : '—' }}</span>

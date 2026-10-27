@@ -306,10 +306,10 @@ async function patch(admin, changes) {
   border-radius: 8px;
 }
 
-.badge-super    { background: rgba(155, 114, 245, 0.2); color: var(--accent-purple); }
-.badge-plain    { background: rgba(61, 207, 207, 0.15); color: var(--accent-cyan); }
-.badge-inactive { background: rgba(244, 99, 74, 0.15);  color: var(--accent-coral); }
-.badge-you      { background: rgba(245, 200, 66, 0.15); color: var(--accent-yellow); }
+.badge-super    { background: rgba(198, 113, 57, 0.2); color: var(--accent-purple); }
+.badge-plain    { background: rgba(86, 99, 63, 0.15); color: var(--accent-cyan); }
+.badge-inactive { background: rgba(140, 73, 26, 0.15);  color: var(--accent-coral); }
+.badge-you      { background: rgba(214, 127, 72, 0.15); color: var(--accent-yellow); }
 
 .admin-row-actions {
   display: flex;
@@ -333,9 +333,9 @@ async function patch(admin, changes) {
 .btn-icon:hover:not(:disabled) { filter: brightness(1.15); transform: translateY(-1px); }
 .btn-icon:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.btn-edit       { background: rgba(155, 114, 245, 0.2); color: var(--accent-purple); }
-.btn-deactivate { background: rgba(244, 99, 74, 0.15);  color: var(--accent-coral); }
-.btn-activate   { background: rgba(70, 217, 138, 0.15); color: var(--accent-green); }
+.btn-edit       { background: rgba(198, 113, 57, 0.2); color: var(--accent-purple); }
+.btn-deactivate { background: rgba(140, 73, 26, 0.15);  color: var(--accent-coral); }
+.btn-activate   { background: rgba(122, 138, 94, 0.15); color: var(--accent-green); }
 
 .edit-overlay {
   position: fixed;

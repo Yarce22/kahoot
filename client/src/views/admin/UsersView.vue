@@ -336,8 +336,8 @@ async function patch(user, changes) {
   border-radius: 8px;
 }
 
-.badge-plain    { background: rgba(61, 207, 207, 0.15); color: var(--accent-cyan); }
-.badge-inactive { background: rgba(244, 99, 74, 0.15);  color: var(--accent-coral); }
+.badge-plain    { background: rgba(86, 99, 63, 0.15); color: var(--accent-cyan); }
+.badge-inactive { background: rgba(140, 73, 26, 0.15);  color: var(--accent-coral); }
 
 .user-row-actions {
   display: flex;
@@ -361,9 +361,9 @@ async function patch(user, changes) {
 .btn-icon:hover:not(:disabled) { filter: brightness(1.15); transform: translateY(-1px); }
 .btn-icon:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.btn-edit       { background: rgba(155, 114, 245, 0.2); color: var(--accent-purple); }
-.btn-deactivate { background: rgba(244, 99, 74, 0.15);  color: var(--accent-coral); }
-.btn-activate   { background: rgba(70, 217, 138, 0.15); color: var(--accent-green); }
+.btn-edit       { background: rgba(198, 113, 57, 0.2); color: var(--accent-purple); }
+.btn-deactivate { background: rgba(140, 73, 26, 0.15);  color: var(--accent-coral); }
+.btn-activate   { background: rgba(122, 138, 94, 0.15); color: var(--accent-green); }
 
 .edit-overlay {
   position: fixed;

@@ -286,11 +286,11 @@ async function submitAssign() {
 }
 
 const GRADIENTS = [
-  'linear-gradient(135deg, #9b72f5, #6c3fd4)',
-  'linear-gradient(135deg, #46d98a, #2bc47a)',
-  'linear-gradient(135deg, #f5c842, #e8a000)',
-  'linear-gradient(135deg, #f4634a, #e84a2f)',
-  'linear-gradient(135deg, #3dcfcf, #1ab8b8)',
+  'linear-gradient(135deg, #c67139, #b2622d)',
+  'linear-gradient(135deg, #7a8a5e, #728157)',
+  'linear-gradient(135deg, #d67f48, #b2622d)',
+  'linear-gradient(135deg, #8c491a, #643312)',
+  'linear-gradient(135deg, #56633f, #3d472b)',
 ]
 const EMOJIS = ['📝', '🌱', '📐', '📚', '🌍', '🧪', '🎨', '🚀']
 
@@ -387,12 +387,12 @@ function thumbEmoji(idx)    { return EMOJIS[idx % EMOJIS.length] }
 }
 .btn-icon:hover { filter: brightness(1.15); transform: translateY(-1px); }
 
-.btn-host   { background: rgba(155, 114, 245, 0.2); color: var(--accent-purple); border: 1px solid rgba(155, 114, 245, 0.3); }
-.btn-edit   { background: rgba(61, 207, 207, 0.15);  color: var(--accent-cyan);   border: 1px solid rgba(61, 207, 207, 0.25); }
-.btn-history{ background: rgba(245, 200, 66, 0.15);  color: var(--accent-yellow); border: 1px solid rgba(245, 200, 66, 0.25); }
-.btn-assign { background: rgba(70, 217, 138, 0.15);  color: var(--accent-green);  border: 1px solid rgba(70, 217, 138, 0.25); }
-.btn-reactivate { background: rgba(61, 207, 255, 0.15); color: var(--accent-cyan); border: 1px solid rgba(61, 207, 255, 0.25); }
-.btn-delete { background: rgba(244, 99, 74, 0.15);   color: var(--accent-coral);  border: 1px solid rgba(244, 99, 74, 0.25); }
+.btn-host   { background: rgba(198, 113, 57, 0.2); color: var(--accent-purple); border: 1px solid rgba(198, 113, 57, 0.3); }
+.btn-edit   { background: rgba(86, 99, 63, 0.15);  color: var(--accent-cyan);   border: 1px solid rgba(86, 99, 63, 0.25); }
+.btn-history{ background: rgba(214, 127, 72, 0.15);  color: var(--accent-yellow); border: 1px solid rgba(214, 127, 72, 0.25); }
+.btn-assign { background: rgba(122, 138, 94, 0.15);  color: var(--accent-green);  border: 1px solid rgba(122, 138, 94, 0.25); }
+.btn-reactivate { background: rgba(86, 99, 63, 0.15); color: var(--accent-cyan); border: 1px solid rgba(86, 99, 63, 0.25); }
+.btn-delete { background: rgba(140, 73, 26, 0.15);   color: var(--accent-coral);  border: 1px solid rgba(140, 73, 26, 0.25); }
 
 .reactivate-msg {
   color: var(--accent-green);
@@ -410,7 +410,7 @@ function thumbEmoji(idx)    { return EMOJIS[idx % EMOJIS.length] }
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent-purple), #7c50e8);
+  background: linear-gradient(135deg, var(--accent-purple), #b2622d);
   border: none;
   cursor: pointer;
   font-size: 26px;
@@ -418,13 +418,13 @@ function thumbEmoji(idx)    { return EMOJIS[idx % EMOJIS.length] }
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 20px rgba(155, 114, 245, 0.5);
+  box-shadow: 0 4px 20px rgba(198, 113, 57, 0.5);
   transition: transform 0.2s, box-shadow 0.2s;
   z-index: 50;
 }
 .fab:hover {
   transform: scale(1.12) rotate(15deg);
-  box-shadow: 0 8px 28px rgba(155, 114, 245, 0.6);
+  box-shadow: 0 8px 28px rgba(198, 113, 57, 0.6);
 }
 
 /* Assign popup */

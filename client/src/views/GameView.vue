@@ -366,24 +366,24 @@ function autoSubmitOpen() {
 
 /* Index-based colors matching design: yellow, coral, cyan, green */
 .answer-btn-0 {
-  background: linear-gradient(135deg, var(--accent-yellow), #d4a800);
-  color: #1a1035;
-  box-shadow: 0 4px 16px rgba(245, 200, 66, 0.4);
+  background: linear-gradient(135deg, var(--accent-yellow), #b2622d);
+  color: #201e1d;
+  box-shadow: 0 4px 16px rgba(214, 127, 72, 0.4);
 }
 .answer-btn-1 {
-  background: linear-gradient(135deg, var(--accent-coral), #e84a2f);
+  background: linear-gradient(135deg, var(--accent-coral), #643312);
   color: white;
-  box-shadow: 0 4px 16px rgba(244, 99, 74, 0.4);
+  box-shadow: 0 4px 16px rgba(140, 73, 26, 0.4);
 }
 .answer-btn-2 {
-  background: linear-gradient(135deg, var(--accent-cyan), #1ab8b8);
-  color: #0e1a2e;
-  box-shadow: 0 4px 16px rgba(61, 207, 207, 0.4);
+  background: linear-gradient(135deg, var(--accent-cyan), #3d472b);
+  color: #201e1d;
+  box-shadow: 0 4px 16px rgba(86, 99, 63, 0.4);
 }
 .answer-btn-3 {
-  background: linear-gradient(135deg, var(--accent-green), #2bc47a);
-  color: #0e1a12;
-  box-shadow: 0 4px 16px rgba(70, 217, 138, 0.4);
+  background: linear-gradient(135deg, var(--accent-green), #728157);
+  color: #201e1d;
+  box-shadow: 0 4px 16px rgba(122, 138, 94, 0.4);
 }
 
 .answer-btn.selected { animation: starburstGlow 1s ease-in-out infinite; filter: brightness(1.15); }
@@ -430,13 +430,13 @@ function autoSubmitOpen() {
 .tf-btn:disabled               { cursor: not-allowed; }
 
 .tf-btn.verdadero {
-  background: linear-gradient(135deg, var(--accent-green), #2bc47a);
-  box-shadow: 0 4px 20px rgba(70, 217, 138, 0.4);
-  color: #0e1a12;
+  background: linear-gradient(135deg, var(--accent-green), #728157);
+  box-shadow: 0 4px 20px rgba(122, 138, 94, 0.4);
+  color: #201e1d;
 }
 .tf-btn.falso {
-  background: linear-gradient(135deg, var(--accent-coral), #e84a2f);
-  box-shadow: 0 4px 20px rgba(244, 99, 74, 0.4);
+  background: linear-gradient(135deg, var(--accent-coral), #643312);
+  box-shadow: 0 4px 20px rgba(140, 73, 26, 0.4);
 }
 .tf-btn.selected { animation: starburstGlow 1s ease-in-out infinite; filter: brightness(1.15); }
 

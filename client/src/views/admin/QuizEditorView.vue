@@ -675,10 +675,10 @@ function typeBadgeClass(type) {
   cursor: pointer;
   transition: all 0.15s;
 }
-.type-btn.active-blue   { border-color: var(--accent-cyan);   color: var(--accent-cyan);   background: rgba(61, 207, 207, 0.1); }
-.type-btn.active-green  { border-color: var(--accent-green);  color: var(--accent-green);  background: rgba(70, 217, 138, 0.1); }
-.type-btn.active-orange { border-color: var(--accent-yellow); color: var(--accent-yellow); background: rgba(245, 200, 66, 0.1); }
-.type-btn.active-purple { border-color: var(--accent-purple); color: var(--accent-purple); background: rgba(155, 114, 245, 0.1); }
+.type-btn.active-blue   { border-color: var(--accent-cyan);   color: var(--accent-cyan);   background: rgba(86, 99, 63, 0.1); }
+.type-btn.active-green  { border-color: var(--accent-green);  color: var(--accent-green);  background: rgba(122, 138, 94, 0.1); }
+.type-btn.active-orange { border-color: var(--accent-yellow); color: var(--accent-yellow); background: rgba(214, 127, 72, 0.1); }
+.type-btn.active-purple { border-color: var(--accent-purple); color: var(--accent-purple); background: rgba(198, 113, 57, 0.1); }
 
 /* Action icon buttons */
 .btn-icon {
@@ -696,9 +696,9 @@ function typeBadgeClass(type) {
 }
 .btn-icon:hover { filter: brightness(1.15); transform: translateY(-1px); }
 
-.btn-host   { background: rgba(155, 114, 245, 0.2); color: var(--accent-purple); border: 1px solid rgba(155, 114, 245, 0.3); }
-.btn-edit   { background: rgba(61, 207, 207, 0.15);  color: var(--accent-cyan);   border: 1px solid rgba(61, 207, 207, 0.25); }
-.btn-delete { background: rgba(244, 99, 74, 0.15);   color: var(--accent-coral);  border: 1px solid rgba(244, 99, 74, 0.25); }
+.btn-host   { background: rgba(198, 113, 57, 0.2); color: var(--accent-purple); border: 1px solid rgba(198, 113, 57, 0.3); }
+.btn-edit   { background: rgba(86, 99, 63, 0.15);  color: var(--accent-cyan);   border: 1px solid rgba(86, 99, 63, 0.25); }
+.btn-delete { background: rgba(140, 73, 26, 0.15);   color: var(--accent-coral);  border: 1px solid rgba(140, 73, 26, 0.25); }
 
 /* Session launcher */
 .session-launcher-panel {

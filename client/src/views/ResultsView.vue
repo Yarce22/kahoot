@@ -80,7 +80,7 @@ import { useGameStore } from '../stores/game.js'
 const router = useRouter()
 const store = useGameStore()
 
-const CONFETTI_COLORS = ['#f5c842', '#f4634a', '#3dcfcf', '#46d98a', '#9b72f5', '#ffffff']
+const CONFETTI_COLORS = ['#d67f48', '#8c491a', '#56633f', '#7a8a5e', '#c67139', '#c0b6a5']
 
 const confettiPieces = Array.from({ length: 60 }, (_, i) => ({
   id: i,
@@ -184,7 +184,7 @@ const confettiPieces = Array.from({ length: 60 }, (_, i) => ({
 
 .podium-1 .podium-block {
   height: 110px;
-  background: linear-gradient(180deg, #f5c842, #e8b800);
+  background: linear-gradient(180deg, #d67f48, #b2622d);
   animation: fadeSlideUp 0.6s 0.2s ease both;
   box-shadow: var(--shadow-glow-yellow);
 }

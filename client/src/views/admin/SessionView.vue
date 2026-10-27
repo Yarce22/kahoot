@@ -128,8 +128,8 @@
                   gap: '10px',
                   padding: '10px 12px',
                   borderRadius: 'var(--radius-md)',
-                  background: ans.is_correct ? 'rgba(70,217,138,0.1)' : ans.is_correct === false ? 'rgba(255,90,90,0.1)' : 'var(--bg-card)',
-                  border: '1px solid ' + (ans.is_correct ? 'rgba(70,217,138,0.3)' : ans.is_correct === false ? 'rgba(255,90,90,0.3)' : 'var(--border)')
+                  background: ans.is_correct ? 'rgba(122, 138, 94,0.1)' : ans.is_correct === false ? 'rgba(140, 73, 26,0.1)' : 'var(--bg-card)',
+                  border: '1px solid ' + (ans.is_correct ? 'rgba(122, 138, 94,0.3)' : ans.is_correct === false ? 'rgba(140, 73, 26,0.3)' : 'var(--border)')
                 }"
               >
                 <span style="font-size: 16px; flex-shrink: 0;">{{ ans.is_correct ? '✅' : ans.is_correct === false ? '❌' : '—' }}</span>
@@ -503,8 +503,8 @@ function rankLabel(i) {
 }
 
 .leaderboard-item.rank-1 {
-  border-color: rgba(245, 200, 66, 0.5);
-  background: linear-gradient(135deg, rgba(245, 200, 66, 0.12), var(--bg-elevated));
+  border-color: rgba(214, 127, 72, 0.5);
+  background: linear-gradient(135deg, rgba(214, 127, 72, 0.12), var(--bg-elevated));
 }
 .leaderboard-item.rank-2 {
   border-color: rgba(180, 180, 200, 0.4);
@@ -520,8 +520,8 @@ function rankLabel(i) {
   flex-shrink: 0; background: var(--bg-card); color: var(--text-secondary);
 }
 
-.rank-1 .rank-badge { background: linear-gradient(135deg, #f5c842, #e8b800); color: #1a1035; box-shadow: var(--shadow-glow-yellow); }
-.rank-2 .rank-badge { background: linear-gradient(135deg, #c0c0d0, #a0a0b0); color: #1a1035; }
+.rank-1 .rank-badge { background: linear-gradient(135deg, #d67f48, #b2622d); color: #201e1d; box-shadow: var(--shadow-glow-yellow); }
+.rank-2 .rank-badge { background: linear-gradient(135deg, #c0c0d0, #a0a0b0); color: #201e1d; }
 .rank-3 .rank-badge { background: linear-gradient(135deg, #cd7f32, #b8692a); color: white; }
 
 .player-name {

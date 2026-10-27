@@ -104,8 +104,8 @@ function rankLabel(i) {
 .correct-answer-banner {
   width: 100%;
   max-width: 640px;
-  background: linear-gradient(135deg, rgba(70, 217, 138, 0.2), rgba(46, 204, 113, 0.1));
-  border: 1px solid rgba(70, 217, 138, 0.35);
+  background: linear-gradient(135deg, rgba(122, 138, 94, 0.2), rgba(114, 129, 87, 0.1));
+  border: 1px solid rgba(122, 138, 94, 0.35);
   border-radius: var(--radius-xl);
   padding: 18px 24px;
   text-align: center;
@@ -160,8 +160,8 @@ function rankLabel(i) {
 .leaderboard-item:hover { transform: translateX(4px); }
 
 .leaderboard-item.rank-1 {
-  border-color: rgba(245, 200, 66, 0.5);
-  background: linear-gradient(135deg, rgba(245, 200, 66, 0.12), var(--bg-card));
+  border-color: rgba(214, 127, 72, 0.5);
+  background: linear-gradient(135deg, rgba(214, 127, 72, 0.12), var(--bg-card));
 }
 .leaderboard-item.rank-2 {
   border-color: rgba(180, 180, 200, 0.4);
@@ -188,13 +188,13 @@ function rankLabel(i) {
 }
 
 .rank-1 .rank-badge {
-  background: linear-gradient(135deg, #f5c842, #e8b800);
-  color: #1a1035;
+  background: linear-gradient(135deg, #d67f48, #b2622d);
+  color: #201e1d;
   box-shadow: var(--shadow-glow-yellow);
 }
 .rank-2 .rank-badge {
   background: linear-gradient(135deg, #c0c0d0, #a0a0b0);
-  color: #1a1035;
+  color: #201e1d;
 }
 .rank-3 .rank-badge {
   background: linear-gradient(135deg, #cd7f32, #b8692a);
