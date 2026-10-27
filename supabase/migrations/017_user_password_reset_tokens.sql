@@ -18,3 +18,9 @@ CREATE TABLE IF NOT EXISTS user_password_reset_tokens (
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_password_reset_tokens_user ON user_password_reset_tokens(user_id);
+
+-- RLS on with no policies: the anon/authenticated roles PostgREST exposes can
+-- neither read nor plant token rows (planting a known token_hash for a victim
+-- user_id would be an account takeover). The server uses the secret key, which
+-- bypasses RLS, so its own reads/writes are unaffected.
+ALTER TABLE user_password_reset_tokens ENABLE ROW LEVEL SECURITY;

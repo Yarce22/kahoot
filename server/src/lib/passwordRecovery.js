@@ -69,7 +69,7 @@ export function createPasswordRecoveryHandlers({
         .or(`used_at.not.is.null,expires_at.lt.${now}`)
 
       if (cleanupError) {
-        console.error('[forgot-password] failed to clean up stale reset tokens', { error: cleanupError })
+        console.error('[forgot-password] failed to clean up stale reset tokens', { accountTable, error: cleanupError })
       }
 
       const { error: insertError } = await supabase
@@ -77,13 +77,13 @@ export function createPasswordRecoveryHandlers({
         .insert({ [fkColumn]: account.id, token_hash: tokenHash, expires_at: expiresAt })
 
       if (insertError) {
-        console.error('[forgot-password] failed to store reset token', { error: insertError })
+        console.error('[forgot-password] failed to store reset token', { accountTable, error: insertError })
       } else {
         // Only send once the token row landed — otherwise the link can never resolve.
         const resetUrl = `${getClientOrigin()}${resetPath}?token=${token}`
         emailService
           .sendPasswordResetEmail({ to: account.email, resetUrl })
-          .catch((err) => console.error('[forgot-password] failed to send reset email', { error: err }))
+          .catch((err) => console.error('[forgot-password] failed to send reset email', { accountTable, error: err }))
       }
     }
 
@@ -96,8 +96,10 @@ export function createPasswordRecoveryHandlers({
   async function resetPassword(req, res, next) {
     const { token, password } = req.body ?? {}
 
-    if (!token) return next(httpError(400, 'token is required'))
-    if (!password) return next(httpError(400, 'password is required'))
+    // typeof guards: a non-string token makes createHash().update() throw, and a
+    // non-string password would skip the length check (undefined < 8 is false).
+    if (!token || typeof token !== 'string') return next(httpError(400, 'token is required'))
+    if (!password || typeof password !== 'string') return next(httpError(400, 'password is required'))
     if (password.length < MIN_PASSWORD_LENGTH) {
       return next(httpError(400, `Password must be at least ${MIN_PASSWORD_LENGTH} characters`))
     }
@@ -151,7 +153,7 @@ export function createPasswordRecoveryHandlers({
       .eq('id', resetToken.id)
 
     if (consumeError) {
-      console.error('[reset-password] failed to mark token as used', { tokenId: resetToken.id, error: consumeError })
+      console.error('[reset-password] failed to mark token as used', { accountTable, tokenId: resetToken.id, error: consumeError })
     }
 
     // Invalidate the account's OTHER outstanding tokens too, so an older leaked
@@ -163,7 +165,7 @@ export function createPasswordRecoveryHandlers({
       .is('used_at', null)
 
     if (siblingError) {
-      console.error('[reset-password] failed to invalidate sibling reset tokens', { accountId, error: siblingError })
+      console.error('[reset-password] failed to invalidate sibling reset tokens', { accountTable, accountId, error: siblingError })
     }
 
     res.json({ message: 'Contraseña actualizada correctamente' })

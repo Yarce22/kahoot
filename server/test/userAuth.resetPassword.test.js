@@ -186,3 +186,21 @@ test('POST /api/user/auth/reset-password — rate limiter trips once the budget 
   const res = await post({ token: 'over-budget', password: PASSWORD })
   assert.equal(res.status, 429)
 })
+
+for (const [label, body] of [
+  ['non-string token', { token: { a: 1 }, password: PASSWORD }],
+  ['numeric token', { token: 12345, password: PASSWORD }],
+  ['non-string password', { token: 'a-valid-raw-token', password: 123456789 }],
+  ['object password with a large length', { token: 'a-valid-raw-token', password: { length: 100 } }]
+]) {
+  test(`POST /api/user/auth/reset-password — ${label} is a 400, never reaches the database`, async () => {
+    const restore = mockSupabaseSequence([])
+    try {
+      const res = await post(body)
+      assert.equal(res.status, 400)
+      assert.equal(restore.calls.length, 0)
+    } finally {
+      restore()
+    }
+  })
+}

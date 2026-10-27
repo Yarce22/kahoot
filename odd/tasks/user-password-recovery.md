@@ -48,5 +48,11 @@ Only admins have forgot/reset password (`server/src/routes/auth.js`). Usuarios d
   - GREEN: `cd client && npx vitest run` => 24 files, 174 tests pass; `npm run build` succeeds. Server suite 487 pass (T1).
   - Commit: see git log (feat(client): add usuario password recovery screens).
 
+- Review (4 lenses, high risk) approved and acknowledged; follow-up fix from its warnings (route: inline — 3 small edits):
+  - RLS enabled on `user_password_reset_tokens` (no policies; server uses secret key) to block anon-key token planting.
+  - `resetPassword` rejects non-string token/password with 400 (was 500 via createHash/bcrypt). RED: 4 new tests in userAuth.resetPassword.test.js failed (TypeError / queue exhausted); GREEN: server 491/491.
+  - Recovery log lines now carry `accountTable` so admin vs usuario failures are distinguishable.
+  - Skipped (suggestions only): shared limiter constants, single source for BCRYPT_COST/EMAIL_RE, audience prop validator, longer two-step rationale comment.
+
 ## Next step
-Done; user to apply migration 017 and review.
+User: apply migration 017 in Supabase; decide merge/push of `feat/user-password-recovery`.
