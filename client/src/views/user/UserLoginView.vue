@@ -9,7 +9,7 @@
     </div>
 
     <!-- Logo -->
-    <div class="home-logo-big" aria-label="QuizPlay">QuizPlay</div>
+    <div class="home-logo-big" aria-label="Bianco Examenes">Bianco <span class="logo-line">Examenes</span></div>
     <p class="home-tagline">Tus exámenes asignados, en un solo lugar 🎓</p>
 
     <div class="card admin-login-card">
@@ -127,6 +127,7 @@ async function submit() {
 
 .home-logo-big {
   font-family: 'Nunito', sans-serif;
+  text-align: center;
   font-weight: 900;
   font-size: clamp(42px, 10vw, 72px);
   background: linear-gradient(135deg, var(--accent-yellow) 0%, var(--accent-coral) 50%, var(--accent-purple) 100%);

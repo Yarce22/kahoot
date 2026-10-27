@@ -1,5 +1,5 @@
 /* ============================================================
-   DESIGN SYSTEM — QuizPlay
+   DESIGN SYSTEM — Bianco Examenes
    Extracted from design_reference.html
    Global tokens, animations, and shared utilities only.
    Per-view styles live in each component's <style scoped>.
@@ -420,4 +420,6 @@ html, body, #app {
 /* ── Responsive tweaks ─────────────────────────────────────── */
 @media (max-width: 600px) {
   .answer-grid { gap: 8px; }
+  /* Two-word brand logo: force "Bianco" over "Examenes" on phones */
+  .logo-line { display: block; }
 }
