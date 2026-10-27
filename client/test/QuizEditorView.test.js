@@ -157,3 +157,36 @@ describe('QuizEditorView — total_time_seconds (edited in minutes)', () => {
     expect(post).toHaveBeenCalledWith('/api/quizzes', expect.objectContaining({ total_time_seconds: null }))
   })
 })
+
+describe('QuizEditorView — editing a true_false question', () => {
+  beforeEach(() => {
+    routeParams.id = 'q1'
+    post.mockReset()
+    put.mockReset()
+    get.mockReset()
+    replace.mockReset()
+  })
+
+  for (const [label, expected] of [['Falso', 'false'], ['Verdadero', 'true'], ['False', 'false'], ['True', 'true']]) {
+    it(`pre-selects and re-sends correct_answer '${expected}' when the correct option reads '${label}'`, async () => {
+      const other = label === 'Falso' || label === 'False' ? 'Verdadero' : 'Falso'
+      get.mockResolvedValue({
+        id: 'q1', title: 'Existing', description: '', total_time_seconds: 600,
+        questions: [{
+          id: 'qq1', text: '¿Es cierto?', type: 'true_false', time_limit_seconds: 20, order_index: 0,
+          options: [{ id: 'o1', text: other, is_correct: false }, { id: 'o2', text: label, is_correct: true }]
+        }]
+      })
+      put.mockResolvedValue({ id: 'qq1' })
+
+      const wrapper = mountView()
+      await flushPromises()
+      await wrapper.find('.btn-edit').trigger('click')
+      const editForm = wrapper.findAll('form').find((f) => f.find('input[type="radio"]').exists())
+      await editForm.trigger('submit')
+      await flushPromises()
+
+      expect(put).toHaveBeenCalledWith('/api/questions/qq1', expect.objectContaining({ correct_answer: expected }))
+    })
+  }
+})

@@ -455,7 +455,8 @@ function startEditQuestion(q) {
   editingQuestionId.value = q.id
   editQuestionForm.value = { text: q.text, type: q.type, time_limit_seconds: q.time_limit_seconds }
   const correctOpt = (q.options || []).find(o => o.is_correct)
-  editTfCorrect.value = q.type === 'true_false' ? (correctOpt?.text?.toLowerCase() ?? 'true') : 'true'
+  // Labels are 'Verdadero'/'Falso' (older rows may still read 'True'/'False').
+  editTfCorrect.value = q.type === 'true_false' && /^(falso|false)$/i.test(correctOpt?.text ?? '') ? 'false' : 'true'
   editOpenCorrect.value = q.type === 'open' ? (correctOpt?.text ?? '') : ''
 }
 

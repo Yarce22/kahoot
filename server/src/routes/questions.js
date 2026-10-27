@@ -3,6 +3,7 @@ import supabase from '../lib/supabase.js'
 import { requireAdmin } from '../middleware/requireAdmin.js'
 import { authGate, ownerGate } from '../middleware/jwtGate.js'
 import { httpError } from '../lib/httpError.js'
+import { trueFalseOptions } from '../domain/trueFalse.js'
 
 export const questionsRouter = Router()
 
@@ -112,10 +113,7 @@ questionsRouter.post('/quizzes/:id/questions', requireAdmin, authGate, ownerGate
   if (type === 'closed' || type === 'multiple') {
     optionRows = options.map(o => ({ question_id: question.id, text: o.text, is_correct: o.is_correct }))
   } else if (type === 'true_false') {
-    optionRows = [
-      { question_id: question.id, text: 'True', is_correct: correct_answer === 'true' },
-      { question_id: question.id, text: 'False', is_correct: correct_answer === 'false' }
-    ]
+    optionRows = trueFalseOptions(question.id, correct_answer)
   } else if (type === 'open') {
     optionRows = [{ question_id: question.id, text: correct_answer.trim(), is_correct: true }]
   }
@@ -185,10 +183,7 @@ questionsRouter.put('/questions/:id', requireAdmin, authGate, ownerGate({ resour
       return next(httpError(422, "true_false questions require correct_answer: 'true' or 'false'"))
     }
     await supabase.from('answer_options').delete().eq('question_id', id)
-    const { error: insertError } = await supabase.from('answer_options').insert([
-      { question_id: id, text: 'True', is_correct: correct_answer === 'true' },
-      { question_id: id, text: 'False', is_correct: correct_answer === 'false' }
-    ])
+    const { error: insertError } = await supabase.from('answer_options').insert(trueFalseOptions(id, correct_answer))
     if (insertError) return next(insertError)
   }
 
