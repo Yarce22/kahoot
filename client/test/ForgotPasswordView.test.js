@@ -5,9 +5,10 @@ import ForgotPasswordView from '../src/views/ForgotPasswordView.vue'
 
 const GENERIC_MESSAGE = 'Si ese email está registrado, te enviamos un enlace para restablecer tu contraseña.'
 
-function mountView() {
+function mountView(props = {}) {
   return mount(ForgotPasswordView, {
-    global: { components: { RouterLink: { template: '<a><slot /></a>' } } }
+    props,
+    global: { components: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } } }
   })
 }
 
@@ -95,5 +96,26 @@ describe('ForgotPasswordView', () => {
 
     expect(wrapper.find('.error-msg').text()).toContain('servidor')
     expect(wrapper.find('.success-msg').exists()).toBe(false)
+  })
+  it('posts to the admin endpoint and links back to the admin login by default', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ message: GENERIC_MESSAGE }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mountView()
+    await submitEmail(wrapper, 'admin@example.com')
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/auth/forgot-password')
+    expect(wrapper.find('a').attributes('href')).toBe('/admin/login')
+  })
+
+  it('posts to the usuario endpoint and links back to the usuario login for the user audience', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ message: GENERIC_MESSAGE }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mountView({ audience: 'user' })
+    await submitEmail(wrapper, 'u@example.com')
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/user/auth/forgot-password')
+    expect(wrapper.find('a').attributes('href')).toBe('/')
   })
 })

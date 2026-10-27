@@ -35,7 +35,7 @@ Only admins have forgot/reset password (`server/src/routes/auth.js`). Usuarios d
 
 ## Tasks
 - [x] T1 — Migration 017 + server forgot/reset endpoints for usuarios with tests (route: delegated writer — 2+ non-trivial files)
-- [ ] T2 — Client: parametrize recovery views, user routes, login link, success notice, with tests (route: delegated writer — 2+ non-trivial files)
+- [x] T2 — Client: parametrize recovery views, user routes, login link, success notice, with tests (route: delegated writer — 2+ non-trivial files)
 
 ## Progress / evidence
 - T1 (server): design = shared helper `server/src/lib/passwordRecovery.js` (factory parametrized by account table, token table, FK column, reset path, email normalizer) used by both auth.js and userAuth.js; admin tests unchanged and green.
@@ -43,7 +43,10 @@ Only admins have forgot/reset password (`server/src/routes/auth.js`). Usuarios d
   - GREEN: `cd server && npm test` => 487 tests, 487 pass, 0 fail (base was 469).
   - Deploy: run migration 017 in Supabase.
   - Commit: see git log (feat(server): add usuario password recovery endpoints).
-- (T2 pending)
+- T2 (client): views reused via `audience` prop ('admin' default | 'user') set by route `props`; config in `client/src/lib/recoveryAudience.js`; UserLoginView got the forgot link + ?reset=success notice.
+  - RED: 5 new view tests (Forgot user audience, Reset user audience x2, UserLogin link + notice) and 2 router tests (/user/forgot-password, /user/reset-password unmatched) failed before implementation.
+  - GREEN: `cd client && npx vitest run` => 24 files, 174 tests pass; `npm run build` succeeds. Server suite 487 pass (T1).
+  - Commit: see git log (feat(client): add usuario password recovery screens).
 
 ## Next step
-T1.
+Done; user to apply migration 017 and review.

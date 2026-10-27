@@ -12,10 +12,11 @@ vi.mock('vue-router', () => ({
 
 import ResetPasswordView from '../src/views/ResetPasswordView.vue'
 
-function mountView(query = { token: 'a-valid-token' }) {
+function mountView(query = { token: 'a-valid-token' }, props = {}) {
   route.query = query
   return mount(ResetPasswordView, {
-    global: { components: { RouterLink: { template: '<a><slot /></a>' } } }
+    props,
+    global: { components: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } } }
   })
 }
 
@@ -101,5 +102,20 @@ describe('ResetPasswordView', () => {
 
     expect(wrapper.find('.error-msg').text()).toContain('servidor')
     expect(push).not.toHaveBeenCalled()
+  })
+  it('posts to the usuario endpoint and lands on the usuario login for the user audience', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mountView({ token: 'a-valid-token' }, { audience: 'user' })
+    await submitPasswords(wrapper, 'new-password-123', 'new-password-123')
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/user/auth/reset-password')
+    expect(push).toHaveBeenCalledWith({ path: '/', query: { reset: 'success' } })
+  })
+
+  it('points the invalid-link hint at the usuario forgot-password screen for the user audience', () => {
+    const wrapper = mountView({}, { audience: 'user' })
+    expect(wrapper.find('.error-msg a').attributes('href')).toBe('/user/forgot-password')
   })
 })

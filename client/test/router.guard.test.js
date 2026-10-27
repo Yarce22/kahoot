@@ -68,3 +68,17 @@ describe('admin route guard', () => {
     expect(router.currentRoute.value.path).toBe('/admin/admins')
   })
 })
+
+describe('usuario password recovery routes', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    setActivePinia(createPinia())
+  })
+
+  it.each(['/user/forgot-password', '/user/reset-password'])('%s is reachable while logged out', async (path) => {
+    await router.push(path)
+    await router.isReady()
+    expect(router.currentRoute.value.path).toBe(path)
+    expect(router.currentRoute.value.matched).toHaveLength(1)
+  })
+})

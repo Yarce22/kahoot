@@ -16,6 +16,8 @@
       <h1 class="admin-title">Mis exámenes</h1>
       <p class="admin-subtitle">Ingresá con tu email y contraseña</p>
 
+      <p v-if="resetSuccess" class="success-msg" role="status">Contraseña actualizada. Iniciá sesión con tu nueva contraseña.</p>
+
       <form @submit.prevent="submit" novalidate>
         <div class="auth-field">
           <label class="auth-field-label" for="email-input">Email</label>
@@ -49,6 +51,8 @@
           {{ loading ? 'Ingresando…' : 'Ingresar' }}
         </button>
       </form>
+
+      <router-link to="/user/forgot-password" class="auth-alt-link">¿Olvidaste tu contraseña?</router-link>
     </div>
 
     <!-- Alternate entry points -->
@@ -65,7 +69,7 @@
 
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useUserAuthStore } from '../../stores/userAuth.js'
 
 const email = ref('')
@@ -73,8 +77,13 @@ const password = ref('')
 const error = ref('')
 const loading = ref(false)
 const router = useRouter()
+const route = useRoute()
 const auth = useUserAuthStore()
 const base = import.meta.env.VITE_API_BASE_URL || ''
+
+// Shown after a successful password reset redirects back here with
+// ?reset=success — see ResetPasswordView.vue.
+const resetSuccess = route.query.reset === 'success'
 
 // Raw fetch, not useUserApi — same reasoning as AdminLoginView: there is no
 // token yet to attach, so the shared composable's Authorization-header logic

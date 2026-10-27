@@ -2,9 +2,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 
-const { push } = vi.hoisted(() => ({ push: vi.fn() }))
+const { push, route } = vi.hoisted(() => ({ push: vi.fn(), route: { query: {} } }))
 vi.mock('vue-router', () => ({
-  useRouter: () => ({ push })
+  useRouter: () => ({ push }),
+  useRoute: () => route
 }))
 
 import UserLoginView from '../src/views/user/UserLoginView.vue'
@@ -27,6 +28,7 @@ describe('UserLoginView', () => {
   beforeEach(() => {
     localStorage.clear()
     push.mockClear()
+    route.query = {}
   })
 
   afterEach(() => vi.unstubAllGlobals())
@@ -87,5 +89,19 @@ describe('UserLoginView', () => {
 
     expect(fetchMock).not.toHaveBeenCalled()
     expect(wrapper.find('.error-msg').exists()).toBe(true)
+  })
+  it('links to the usuario forgot-password screen', () => {
+    const wrapper = mount(UserLoginView, {
+      global: { plugins: [createPinia()], components: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } } }
+    })
+    const link = wrapper.findAll('a').find((a) => a.text().includes('Olvidaste tu contraseña'))
+    expect(link.attributes('href')).toBe('/user/forgot-password')
+  })
+
+  it('shows the reset-success notice only when redirected with ?reset=success', () => {
+    expect(mountView().find('.success-msg').exists()).toBe(false)
+
+    route.query = { reset: 'success' }
+    expect(mountView().find('.success-msg').text()).toContain('Contraseña actualizada')
   })
 })

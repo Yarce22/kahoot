@@ -14,7 +14,7 @@
             v-model="email"
             class="input-sm"
             type="email"
-            placeholder="admin@ejemplo.com"
+            :placeholder="cfg.emailPlaceholder"
             required
             autocomplete="username"
           />
@@ -29,13 +29,17 @@
 
       <p v-else class="success-msg" role="status">{{ message }}</p>
 
-      <router-link to="/admin/login" class="auth-alt-link">Volver a iniciar sesión</router-link>
+      <router-link :to="cfg.loginPath" class="auth-alt-link">Volver a iniciar sesión</router-link>
     </div>
   </div>
 </template>
 
 <script setup>
 import { ref } from 'vue'
+import { RECOVERY_AUDIENCES } from '../lib/recoveryAudience.js'
+
+const props = defineProps({ audience: { type: String, default: 'admin' } })
+const cfg = RECOVERY_AUDIENCES[props.audience]
 
 const email = ref('')
 const error = ref('')
@@ -52,7 +56,7 @@ async function submit() {
   }
   loading.value = true
   try {
-    const res = await fetch(`${base}/api/auth/forgot-password`, {
+    const res = await fetch(`${base}${cfg.apiBase}/forgot-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: email.value.trim() })

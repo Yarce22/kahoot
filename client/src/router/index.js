@@ -52,6 +52,9 @@ const routes = [
   // where everything else is either the login screen or behind a guard.
   { path: '/forgot-password', component: () => import('../views/ForgotPasswordView.vue') },
   { path: '/reset-password', component: () => import('../views/ResetPasswordView.vue') },
+  // Same views for usuarios; the audience prop picks the API and login route.
+  { path: '/user/forgot-password', component: () => import('../views/ForgotPasswordView.vue'), props: { audience: 'user' } },
+  { path: '/user/reset-password', component: () => import('../views/ResetPasswordView.vue'), props: { audience: 'user' } },
   { path: '/admin/quizzes', component: () => import('../views/admin/QuizListView.vue'), beforeEnter: requireAdmin },
   { path: '/admin/quizzes/new', component: () => import('../views/admin/QuizEditorView.vue'), beforeEnter: requireAdmin },
   { path: '/admin/quizzes/:id', component: () => import('../views/admin/QuizEditorView.vue'), beforeEnter: requireAdmin },

@@ -8,7 +8,7 @@
 
       <p v-if="!token" class="error-msg" role="alert">
         El enlace no es válido. Solicitá uno nuevo desde
-        <router-link to="/forgot-password">recuperar contraseña</router-link>.
+        <router-link :to="cfg.forgotPath">recuperar contraseña</router-link>.
       </p>
 
       <form v-else @submit.prevent="submit" novalidate>
@@ -51,6 +51,10 @@
 <script setup>
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { RECOVERY_AUDIENCES } from '../lib/recoveryAudience.js'
+
+const props = defineProps({ audience: { type: String, default: 'admin' } })
+const cfg = RECOVERY_AUDIENCES[props.audience]
 
 const route = useRoute()
 const router = useRouter()
@@ -74,7 +78,7 @@ async function submit() {
   }
   loading.value = true
   try {
-    const res = await fetch(`${base}/api/auth/reset-password`, {
+    const res = await fetch(`${base}${cfg.apiBase}/reset-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: token.value, password: password.value })
@@ -84,7 +88,7 @@ async function submit() {
       error.value = data.error || `No se pudo restablecer la contraseña (error ${res.status}).`
       return
     }
-    router.push({ path: '/admin/login', query: { reset: 'success' } })
+    router.push({ path: cfg.loginPath, query: { reset: 'success' } })
   } catch (_) {
     error.value = 'No se pudo conectar con el servidor.'
   } finally {
