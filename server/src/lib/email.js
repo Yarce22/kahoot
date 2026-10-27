@@ -34,22 +34,11 @@ const email = {
 
     const resend = getClient()
 
-    // Sandbox-only stopgap: Resend refuses to deliver to anyone but your own
-    // account email until a sending domain is verified. Setting this env var
-    // reroutes every reset email to that address regardless of which admin
-    // requested it, so the flow can be tested end-to-end with real admins
-    // before a domain is verified. SECURITY: whoever holds this inbox can
-    // then reset any admin's password — remove this env var before real
-    // production use with admins you don't control.
-    const overrideTo = process.env.RESEND_SANDBOX_OVERRIDE_TO
-    const recipient = overrideTo || to
-    const text = overrideTo
-      ? `[Sandbox override — solicitado para: ${to}]\n\nRecibimos una solicitud para restablecer tu contraseña.\n\nUsá este enlace para elegir una nueva contraseña (vence en 30 minutos):\n${resetUrl}\n\nSi no fuiste vos, podés ignorar este email.`
-      : `Recibimos una solicitud para restablecer tu contraseña.\n\nUsá este enlace para elegir una nueva contraseña (vence en 30 minutos):\n${resetUrl}\n\nSi no fuiste vos, podés ignorar este email.`
+    const text = `Recibimos una solicitud para restablecer tu contraseña.\n\nUsá este enlace para elegir una nueva contraseña (vence en 30 minutos):\n${resetUrl}\n\nSi no fuiste vos, podés ignorar este email.`
 
     const { error } = await resend.emails.send({
       from,
-      to: recipient,
+      to,
       subject: 'Restablecé tu contraseña',
       text
     })
