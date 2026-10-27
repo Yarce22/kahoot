@@ -154,3 +154,109 @@ describe('QuizListView — Asignar popup', () => {
     expect(wrapper.find('#assign-store-select').exists()).toBe(true)
   })
 })
+
+describe('QuizListView — Reactivar popup', () => {
+  const ASSIGNMENTS = [
+    { id: 'a1', user: { id: 'u1', fullName: 'Uno', email: 'u1@x.com' }, status: 'completed', cycle: 1 },
+    { id: 'a2', user: { id: 'u2', fullName: 'Dos', email: 'u2@x.com' }, status: 'expired', cycle: 1 }
+  ]
+
+  beforeEach(() => {
+    localStorage.clear()
+    get.mockReset()
+    post.mockReset()
+    del.mockReset()
+  })
+
+  async function openReactivate() {
+    get.mockResolvedValueOnce([ASSIGNABLE_QUIZ])
+    const wrapper = mountAs('admin')
+    await flushPromises()
+    get.mockResolvedValueOnce({ assignments: ASSIGNMENTS, page: 1, page_size: 100, total: 2 })
+    await wrapper.find('.btn-reactivate').trigger('click')
+    await flushPromises()
+    return wrapper
+  }
+
+  it('lists the quiz assignments instead of reactivating everyone at once', async () => {
+    const wrapper = await openReactivate()
+
+    expect(get).toHaveBeenLastCalledWith('/api/assignments?quiz_id=q1&page=1&page_size=100')
+    expect(post).not.toHaveBeenCalled()
+    const rows = wrapper.findAll('.reactivate-overlay .assign-user-list .assign-user-row')
+    expect(rows).toHaveLength(2)
+    expect(rows[0].text()).toContain('Uno')
+  })
+
+  it('posts only the selected usuarios', async () => {
+    const wrapper = await openReactivate()
+
+    await wrapper.findAll('.reactivate-overlay .assign-user-list .assign-user-row input')[1].setValue(true)
+    post.mockResolvedValue({ reactivated: 1, cycle: 2 })
+    await wrapper.find('.reactivate-overlay .btn-primary').trigger('click')
+    await flushPromises()
+
+    expect(post).toHaveBeenCalledWith('/api/assignments/reactivate', { quiz_id: 'q1', user_ids: ['u2'] })
+    expect(wrapper.text()).toContain('1 asignación(es) reactivada(s).')
+  })
+
+  it('disables submit until at least one usuario is selected, and "Seleccionar todos" selects every row', async () => {
+    const wrapper = await openReactivate()
+    const submit = wrapper.find('.reactivate-overlay .btn-primary')
+    expect(submit.attributes('disabled')).toBeDefined()
+
+    await wrapper.find('#reactivate-select-all').setValue(true)
+    expect(submit.attributes('disabled')).toBeUndefined()
+    post.mockResolvedValue({ reactivated: 2, cycle: 2 })
+    await submit.trigger('click')
+    await flushPromises()
+
+    expect(post).toHaveBeenCalledWith('/api/assignments/reactivate', { quiz_id: 'q1', user_ids: ['u1', 'u2'] })
+  })
+
+  it('ignores a late assignment fetch from a quiz whose popup was already replaced', async () => {
+    const OTHER_QUIZ = { ...ASSIGNABLE_QUIZ, id: 'q3', title: 'Otro' }
+    get.mockResolvedValueOnce([ASSIGNABLE_QUIZ, OTHER_QUIZ])
+    const wrapper = mountAs('admin')
+    await flushPromises()
+
+    let resolveFirst
+    get.mockImplementationOnce(() => new Promise((r) => { resolveFirst = r }))
+    const buttons = wrapper.findAll('.btn-reactivate')
+    await buttons[0].trigger('click')
+    get.mockResolvedValueOnce({ assignments: [ASSIGNMENTS[1]], page: 1, page_size: 100, total: 1 })
+    await buttons[1].trigger('click')
+    await flushPromises()
+    resolveFirst({ assignments: ASSIGNMENTS, page: 1, page_size: 100, total: 2 })
+    await flushPromises()
+
+    const rows = wrapper.findAll('.reactivate-overlay .assign-user-list .assign-user-row')
+    expect(rows).toHaveLength(1)
+    expect(rows[0].text()).toContain('Dos')
+  })
+
+  it('clears the selection after a successful reactivation even if the refresh fails', async () => {
+    const wrapper = await openReactivate()
+
+    await wrapper.find('#reactivate-select-all').setValue(true)
+    post.mockResolvedValue({ reactivated: 2, cycle: 2 })
+    get.mockRejectedValueOnce(new Error('network down'))
+    await wrapper.find('.reactivate-overlay .btn-primary').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('2 asignación(es) reactivada(s).')
+    expect(wrapper.find('.reactivate-overlay .btn-primary').attributes('disabled')).toBeDefined()
+  })
+
+  it('tells the admin when nothing was reactivated', async () => {
+    const wrapper = await openReactivate()
+
+    await wrapper.findAll('.reactivate-overlay .assign-user-list .assign-user-row input')[0].setValue(true)
+    post.mockResolvedValue({ reactivated: 0, cycle: 2 })
+    get.mockResolvedValueOnce({ assignments: ASSIGNMENTS, page: 1, page_size: 100, total: 2 })
+    await wrapper.find('.reactivate-overlay .btn-primary').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('No se reactivó ninguna asignación.')
+  })
+})

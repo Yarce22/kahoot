@@ -60,17 +60,13 @@
           <button class="btn-icon btn-assign" @click="openAssign(quiz)">
             📌 Asignar
           </button>
-          <button class="btn-icon btn-reactivate" :disabled="reactivatingId === quiz.id" @click="reactivate(quiz)">
-            {{ reactivatingId === quiz.id ? 'Reactivando…' : '🔄 Reactivar' }}
+          <button class="btn-icon btn-reactivate" @click="openReactivate(quiz)">
+            🔄 Reactivar
           </button>
           <button class="btn-icon btn-delete" @click="remove(quiz.id)">
             🗑 Eliminar
           </button>
         </div>
-        <template v-if="reactivateQuizId === quiz.id">
-          <p v-if="reactivateError" class="error-msg" role="alert">{{ reactivateError }}</p>
-          <p v-else-if="reactivateMsg" class="reactivate-msg">{{ reactivateMsg }}</p>
-        </template>
       </div>
     </div>
 
@@ -158,11 +154,57 @@
         </template>
       </div>
     </div>
+
+    <!-- Reactivar popup — same inline-popup pattern (and styles) as Asignar.
+         Lists the quiz's current assignments so the admin picks who gets
+         another attempt instead of reactivating every assignee at once. -->
+    <div v-if="reactivatingQuiz" class="assign-overlay reactivate-overlay" @click.self="closeReactivate">
+      <div class="card assign-popup">
+        <h2 class="nunito" style="font-weight: 800; font-size: 18px; color: var(--text-primary); margin-bottom: 16px;">
+          Reactivar "{{ reactivatingQuiz.title }}"
+        </h2>
+
+        <p v-if="loadingAssignments" style="color: var(--text-secondary); font-family: 'Nunito', sans-serif; font-weight: 700;">
+          Cargando asignaciones…
+        </p>
+        <p v-else-if="!quizAssignments.length && !reactivateError" style="color: var(--text-secondary); font-family: 'Nunito', sans-serif; font-weight: 700;">
+          Este cuestionario no tiene usuarios asignados.
+        </p>
+        <template v-else-if="quizAssignments.length">
+          <label class="assign-user-row reactivate-select-all">
+            <input id="reactivate-select-all" type="checkbox" :checked="allReactivateSelected" @change="toggleAllReactivate($event.target.checked)" />
+            <span class="assign-user-name">Seleccionar todos</span>
+          </label>
+          <div class="assign-user-list">
+            <label v-for="a in quizAssignments" :key="a.id" class="assign-user-row">
+              <input type="checkbox" :value="a.user.id" v-model="reactivateUserIds" />
+              <span class="assign-user-name">{{ a.user.fullName }}</span>
+              <span class="assign-user-email">{{ STATUS_LABELS[a.status] ?? a.status }}</span>
+            </label>
+          </div>
+        </template>
+
+        <p v-if="reactivateError" class="error-msg" role="alert">{{ reactivateError }}</p>
+        <p v-if="reactivateMsg" class="reactivate-msg">{{ reactivateMsg }}</p>
+
+        <div class="assign-actions">
+          <button type="button" class="btn btn-ghost" @click="closeReactivate">Cerrar</button>
+          <button
+            type="button"
+            class="btn btn-primary"
+            :disabled="reactivating || !reactivateUserIds.length"
+            @click="submitReactivate"
+          >
+            {{ reactivating ? 'Reactivando…' : 'Reactivar seleccionados' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQuizStore } from '../../stores/quiz.js'
 import { useAuthStore } from '../../stores/auth.js'
@@ -179,10 +221,18 @@ const assignmentsStore = useAssignmentsStore()
 const startingId = ref(null)
 const startError = ref('')
 
-const reactivatingId = ref(null)
-const reactivateQuizId = ref(null)
+const reactivatingQuiz = ref(null)
+const quizAssignments = ref([])
+const loadingAssignments = ref(false)
+const reactivateUserIds = ref([])
+const reactivating = ref(false)
 const reactivateMsg = ref('')
 const reactivateError = ref('')
+const allReactivateSelected = computed(() =>
+  quizAssignments.value.length > 0 && reactivateUserIds.value.length === quizAssignments.value.length
+)
+
+const STATUS_LABELS = { pending: 'Pendiente', completed: 'Completado', expired: 'Vencido' }
 
 const assigningQuiz = ref(null)
 const assignStoreFilter = ref('')
@@ -214,28 +264,68 @@ async function remove(id) {
   await store.deleteQuiz(id)
 }
 
-// reactivate — bumps the assignment cycle for EVERY usuario currently
-// assigned to this quiz (completed, expired, or still pending), so they can
-// all take it again. Whole-quiz only, no per-usuario picker: that matches
-// the server's own "omitted user_ids = everyone" contract and the real use
-// case here (periodic re-training), not a one-off single-usuario redo.
-async function reactivate(quiz) {
-  if (reactivatingId.value) return
-  if (!confirm(`¿Reactivar "${quiz.title}"? Todos los usuarios con este examen asignado van a poder rendirlo de nuevo.`)) return
+// openReactivate — lists the quiz's assignments so the admin picks which
+// usuarios get another attempt. Always sends explicit user_ids: the server
+// treats an omitted user_ids as "everyone", which is what this replaces.
+async function openReactivate(quiz) {
+  reactivatingQuiz.value = quiz
+  quizAssignments.value = []
+  reactivateUserIds.value = []
+  reactivateMsg.value = ''
+  reactivateError.value = ''
+  loadingAssignments.value = true
+  try {
+    const assignments = await assignmentsStore.fetchQuizAssignments(quiz.id)
+    // Popup closed or switched to another quiz while this fetch was in flight:
+    // its rows must not land in the other quiz's picker.
+    if (reactivatingQuiz.value !== quiz) return
+    quizAssignments.value = assignments
+  } catch (e) {
+    if (reactivatingQuiz.value === quiz) reactivateError.value = e.message
+  } finally {
+    if (reactivatingQuiz.value === quiz) loadingAssignments.value = false
+  }
+}
 
-  reactivatingId.value = quiz.id
-  reactivateQuizId.value = quiz.id
+function closeReactivate() {
+  reactivatingQuiz.value = null
+}
+
+function toggleAllReactivate(checked) {
+  reactivateUserIds.value = checked ? quizAssignments.value.map((a) => a.user.id) : []
+}
+
+async function submitReactivate() {
+  const quiz = reactivatingQuiz.value
+  if (!quiz || !reactivateUserIds.value.length) return
+  reactivating.value = true
   reactivateMsg.value = ''
   reactivateError.value = ''
   try {
-    const { reactivated } = await assignmentsStore.reactivateAssignments({ quiz_id: quiz.id })
+    const { reactivated } = await assignmentsStore.reactivateAssignments({
+      quiz_id: quiz.id,
+      user_ids: reactivateUserIds.value
+    })
+    if (reactivatingQuiz.value !== quiz) return
+    // Cleared right after the POST, not after the refresh: a failed refresh
+    // must not leave the same selection armed for a second cycle bump.
+    reactivateUserIds.value = []
     reactivateMsg.value = reactivated > 0
       ? `${reactivated} asignación(es) reactivada(s).`
-      : 'Este cuestionario no tenía asignaciones para reactivar.'
+      : 'No se reactivó ninguna asignación.'
   } catch (e) {
-    reactivateError.value = e.message
+    if (reactivatingQuiz.value === quiz) reactivateError.value = e.message
+    return
   } finally {
-    reactivatingId.value = null
+    reactivating.value = false
+  }
+
+  // Refresh so each row's status reflects the new cycle (back to Pendiente).
+  try {
+    const assignments = await assignmentsStore.fetchQuizAssignments(quiz.id)
+    if (reactivatingQuiz.value === quiz) quizAssignments.value = assignments
+  } catch {
+    // Reactivation already succeeded; a stale status list is harmless.
   }
 }
 

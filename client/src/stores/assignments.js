@@ -14,15 +14,25 @@ export const useAssignmentsStore = defineStore('assignments', {
       const api = useAdminApi()
       return api.post('/api/assignments', { quiz_id, user_ids })
     },
-    // reactivateAssignments — POST /api/assignments/reactivate, bumps the
-    // quiz's assignment cycle so every usuario currently assigned to it
-    // (completed, expired, or still pending) can take it again. user_ids is
-    // left undefined here (not just this store's job to offer a picker) —
-    // the server's own contract already treats an omitted user_ids as
-    // "every assignment on the quiz".
-    async reactivateAssignments({ quiz_id }) {
+    // fetchQuizAssignments — every assignment on one quiz, for the Reactivar
+    // picker. Walks the server's 100-row pages until `total` is reached so a
+    // quiz with more assignees than one page still lists all of them.
+    async fetchQuizAssignments(quiz_id) {
       const api = useAdminApi()
-      return api.post('/api/assignments/reactivate', { quiz_id })
+      const all = []
+      for (let page = 1; ; page++) {
+        const search = new URLSearchParams({ quiz_id, page, page_size: 100 })
+        const res = await api.get(`/api/assignments?${search}`)
+        all.push(...res.assignments)
+        if (!res.assignments.length || all.length >= res.total) return all
+      }
+    },
+    // reactivateAssignments — POST /api/assignments/reactivate, bumps the
+    // assignment cycle for the given usuarios only, so they (completed,
+    // expired, or still pending) can take the quiz again.
+    async reactivateAssignments({ quiz_id, user_ids }) {
+      const api = useAdminApi()
+      return api.post('/api/assignments/reactivate', { quiz_id, user_ids })
     }
   }
 })
