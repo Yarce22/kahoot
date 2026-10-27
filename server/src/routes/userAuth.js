@@ -5,6 +5,7 @@ import supabase from '../lib/supabase.js'
 import { signToken } from '../lib/jwt.js'
 import { httpError } from '../lib/httpError.js'
 import { requireJwtMode } from '../middleware/jwtGate.js'
+import { createPasswordRecoveryHandlers } from '../lib/passwordRecovery.js'
 
 export const userAuthRouter = Router()
 
@@ -90,3 +91,35 @@ userAuthRouter.post('/login', userLoginLimiter, async (req, res, next) => {
     }
   })
 })
+
+// Own budgets for the recovery endpoints, same values as the admin ones
+// (auth.js): forgot-password guards e-mail bombing / enumeration, reset-password
+// guards token guessing and bcrypt CPU. Exported so tests can resetKey() them.
+export const userForgotPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false
+})
+
+export const userResetPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false
+})
+
+// Same guarantees as the admin flow (lib/passwordRecovery.js), against the
+// users table. Email is normalized like login's, since the UNIQUE index is
+// case-sensitive.
+const { forgotPassword, resetPassword } = createPasswordRecoveryHandlers({
+  accountTable: 'users',
+  tokenTable: 'user_password_reset_tokens',
+  fkColumn: 'user_id',
+  resetPath: '/user/reset-password',
+  normalizeEmail: (email) => email.trim().toLowerCase()
+})
+
+// POST /api/user/auth/forgot-password and /reset-password — open, rate-limited.
+userAuthRouter.post('/auth/forgot-password', userForgotPasswordLimiter, forgotPassword)
+userAuthRouter.post('/auth/reset-password', userResetPasswordLimiter, resetPassword)
