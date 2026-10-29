@@ -467,7 +467,7 @@ test('POST /api/user/quizzes/:assignmentId/attempt — resuming a past-due attem
     // SAFE_QUESTION_SELECT the resume path serves.
     const questionSelects = restore.calls.filter((c) => c.table === 'questions' && c.method === 'select')
     assert.equal(questionSelects.length, 1)
-    assert.equal(questionSelects.every((c) => c.args[0] === 'id, text'), true)
+    assert.equal(questionSelects.every((c) => c.args[0] === 'id, text, type'), true)
     assert.equal(questionSelects.every((c) => c.args[0].includes('answer_options') === false), true)
     // answer_options is never read directly either — the other way to obtain
     // the same correct-answer data.
@@ -1104,7 +1104,7 @@ test('POST /api/user/attempts/:id/submit — grades, persists totals, and comple
     // JSON.stringify drops on the way out, so the call PostgREST would have
     // received had no matching signature (PGRST202).
     { table: 'quiz_attempts', result: { data: { id: ATTEMPT_UUID, assignment_id: ASSIGNMENT_UUID, quiz_id: 'quiz-1', user_id: USER.id, cycle: 1, status: 'in_progress', expires_at: '2030-01-01T00:00:00.000Z', submitted_at: null }, error: null } },
-    { table: 'questions', result: { data: [{ id: 'q1', text: 'Q1?' }, { id: 'q2', text: 'Q2?' }], error: null } },
+    { table: 'questions', result: { data: [{ id: 'q1', text: 'Q1?', type: 'open' }, { id: 'q2', text: 'Q2?', type: 'open' }], error: null } },
     {
       table: 'quiz_attempt_answers',
       result: {
@@ -1131,6 +1131,7 @@ test('POST /api/user/attempts/:id/submit — grades, persists totals, and comple
     assert.deepEqual(res.body.result.answers.find((a) => a.questionId === 'q1'), {
       questionId: 'q1',
       questionText: 'Q1?',
+      questionType: 'open',
       answerText: 'Yes',
       isCorrect: true
     })
@@ -1343,6 +1344,39 @@ test('GET /api/user/attempts/:id/result — returns the same result shape as sub
     assert.equal('verdict' in res.body.result, false)
     // No admin-only fields — reuses the same field vocabulary as the submit response.
     assert.equal(JSON.stringify(res.body.result).includes('correctAnswer'), false)
+  } finally {
+    restore()
+  }
+})
+
+test('GET /api/user/attempts/:id/result — carries each answer\'s questionType, null when the question is gone', async () => {
+  const restore = mockSupabaseSequence([
+    { table: 'users', result: { data: USER, error: null } },
+    { table: 'quiz_attempts', result: { data: { id: ATTEMPT_UUID, quiz_id: 'quiz-1', user_id: USER.id, status: 'completed', total_questions: 2, correct_count: 1, score_percent: 50, submitted_at: '2026-01-01T00:05:00.000Z' }, error: null } },
+    { table: 'questions', result: { data: [{ id: 'q1', text: 'Q1?', type: 'closed' }], error: null } },
+    {
+      table: 'quiz_attempt_answers',
+      result: {
+        data: [
+          // Single-choice rows store selected_option_id, never answer_text.
+          { question_id: 'q1', answer_text: null, is_correct: true, answered_at: '2026-01-01T00:01:00.000Z' },
+          { question_id: 'q-deleted', answer_text: null, is_correct: false, answered_at: '2026-01-01T00:02:00.000Z' }
+        ],
+        error: null
+      }
+    }
+  ])
+  try {
+    const res = await request(buildApp())
+      .get(`/api/user/attempts/${ATTEMPT_UUID}/result`)
+      .set('Authorization', `Bearer ${userToken()}`)
+    assert.equal(res.status, 200)
+    assert.deepEqual(res.body.result.answers, [
+      { questionId: 'q1', questionText: 'Q1?', questionType: 'closed', answerText: null, isCorrect: true },
+      { questionId: 'q-deleted', questionText: null, questionType: null, answerText: null, isCorrect: false }
+    ])
+    const questionSelect = restore.calls.find((c) => c.table === 'questions' && c.method === 'select')
+    assert.equal(questionSelect.args[0], 'id, text, type')
   } finally {
     restore()
   }

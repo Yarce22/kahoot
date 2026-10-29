@@ -80,8 +80,30 @@ describe('UserResultView', () => {
     expect(wrapper.find('a[href="/user/quizzes"]').exists()).toBe(true)
   })
 
-  it('shows a fallback message for an answered question with no text', async () => {
-    get.mockResolvedValue({ result: result({ answers: [{ questionId: 'q1', questionText: 'Sin respuesta', answerText: null, isCorrect: false }] }) })
+  it('shows a fallback message for an unanswered open question', async () => {
+    get.mockResolvedValue({ result: result({ answers: [{ questionId: 'q1', questionText: 'Abierta', questionType: 'open', answerText: null, isCorrect: false }] }) })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.answer-text').text()).toBe('(sin respuesta)')
+  })
+
+  // Single-choice/true-false rows store the picked option id, never answer_text.
+  it('hides the answer line for a choice question with no answer text', async () => {
+    get.mockResolvedValue({ result: result({ answers: [
+      { questionId: 'q1', questionText: 'Cerrada', questionType: 'closed', answerText: null, isCorrect: true },
+      { questionId: 'q2', questionText: 'VF', questionType: 'true_false', answerText: null, isCorrect: false }
+    ] }) })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.findAll('.answer-row')).toHaveLength(2)
+    expect(wrapper.find('.answer-text').exists()).toBe(false)
+  })
+
+  // questionType is null when the question was deleted — keep the placeholder.
+  it('keeps the fallback message when the question type is unknown', async () => {
+    get.mockResolvedValue({ result: result({ answers: [{ questionId: 'q1', questionText: null, questionType: null, answerText: null, isCorrect: false }] }) })
     const wrapper = mountView()
     await flushPromises()
 

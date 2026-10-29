@@ -138,7 +138,7 @@ async function fetchSerializedQuestions(quizId) {
 async function fetchGradingInputs(quizId, attemptId) {
   const { data: questions, error: questionsError } = await supabase
     .from('questions')
-    .select('id, text')
+    .select('id, text, type')
     .eq('quiz_id', quizId)
 
   if (questionsError) throw questionsError
@@ -535,10 +535,11 @@ userQuizzesRouter.post('/attempts/:id/answers', async (req, res, next) => {
 // an option-level `is_correct` — the one deliberate exception userSerializer
 // (design D5) documents as legitimate for a usuario's own result.
 function buildAnswersDetail(questions, answers) {
-  const textByQuestionId = Object.fromEntries((questions ?? []).map((q) => [q.id, q.text]))
+  const byId = Object.fromEntries((questions ?? []).map((q) => [q.id, q]))
   return (answers ?? []).map((a) => ({
     questionId: a.question_id,
-    questionText: textByQuestionId[a.question_id] ?? null,
+    questionText: byId[a.question_id]?.text ?? null,
+    questionType: byId[a.question_id]?.type ?? null,
     answerText: a.answer_text,
     isCorrect: a.is_correct
   }))
@@ -672,7 +673,7 @@ userQuizzesRouter.get('/attempts/:id/result', async (req, res, next) => {
 
   const { data: questions, error: questionsError } = await supabase
     .from('questions')
-    .select('id, text')
+    .select('id, text, type')
     .eq('quiz_id', attempt.quiz_id)
 
   if (questionsError) return next(questionsError)
