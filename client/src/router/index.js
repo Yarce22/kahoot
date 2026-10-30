@@ -47,6 +47,7 @@ const routes = [
   { path: '/user/quizzes', component: () => import('../views/user/UserQuizzesView.vue'), beforeEnter: requireUsuario },
   { path: '/user/quizzes/:assignmentId/attempt', component: () => import('../views/user/UserAttemptView.vue'), beforeEnter: requireUsuario },
   { path: '/user/attempts/:id/result', component: () => import('../views/user/UserResultView.vue'), beforeEnter: requireUsuario },
+  { path: '/user/dashboard', component: () => import('../views/user/UserDashboardView.vue'), beforeEnter: requireUsuario },
   { path: '/admin/login', component: () => import('../views/admin/AdminLoginView.vue') },
   // Public and unauthenticated — hence top-level views, not views/admin/,
   // where everything else is either the login screen or behind a guard.
@@ -68,6 +69,7 @@ const routes = [
   // requireAdmin, not requireSuperadmin: usuario management is store-scoped
   // for a plain admin, same authorization shape as the quiz routes.
   { path: '/admin/users', component: () => import('../views/admin/UsersView.vue'), beforeEnter: requireAdmin },
+  { path: '/admin/dashboard', component: () => import('../views/admin/AdminDashboardView.vue'), beforeEnter: requireAdmin },
 ]
 
 export default createRouter({

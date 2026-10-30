@@ -43,6 +43,20 @@ describe('UserQuizzesView', () => {
     push.mockClear()
   })
 
+  it('shows a "Mi avance" link to the progress dashboard', async () => {
+    get.mockResolvedValue({ quizzes: [], page: 1, page_size: 25, total: 0 })
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const wrapper = mount(UserQuizzesView, {
+      global: {
+        plugins: [pinia],
+        components: { RouterLink: { template: '<a :href="to"><slot /></a>', props: ['to'] } }
+      }
+    })
+    await flushPromises()
+    expect(wrapper.find('a[href="/user/dashboard"]').text()).toContain('Mi avance')
+  })
+
   it('shows "Comenzar" and starts the attempt route when there is no attempt yet', async () => {
     get.mockResolvedValue({ quizzes: [quizRow()], page: 1, page_size: 25, total: 1 })
     const wrapper = mountView()
@@ -127,7 +141,7 @@ describe('UserQuizzesView', () => {
     const wrapper = mount(UserQuizzesView, { global: { plugins: [pinia] } })
     await flushPromises()
 
-    await wrapper.find('.btn-ghost').trigger('click')
+    await wrapper.find('button.btn-ghost').trigger('click')
 
     expect(useUserAuthStore().isLoggedIn).toBe(false)
     expect(push).toHaveBeenCalledWith('/')

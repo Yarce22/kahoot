@@ -9,6 +9,9 @@
         <router-link to="/admin/users" class="btn btn-primary" style="font-size: 14px; padding: 8px 16px;">
           🧑‍🤝‍🧑 Usuarios
         </router-link>
+        <router-link to="/admin/dashboard" class="btn btn-primary" style="font-size: 14px; padding: 8px 16px;">
+          📊 Dashboard
+        </router-link>
         <router-link v-if="auth.isSuperadmin" to="/admin/admins" class="btn btn-primary" style="font-size: 14px; padding: 8px 16px;">
           👥 Administradores
         </router-link>
