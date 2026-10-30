@@ -14,14 +14,18 @@ Implement the admin and usuario dashboards exactly as designed in the Claude Des
 - Mode: strict (orchestrator config). Runner: `cd client && npm test` (vitest); build `cd client && npm run build`.
 
 ## Delivery
-- Branch `feat/dashboards-design` from main `98ef000`. Strategy ask-on-risk; forecast likely > 400 lines.
+- Branch `feat/dashboards-design` from main `98ef000`. Strategy ask-on-risk; actual 918+/389- (incl. removed chart components and their tests).
 
 ## Tasks
-- [ ] T1 — Admin dashboard per design. Route: delegated (writer trigger: multiple non-trivial files + design reading).
-- [ ] T2 — Usuario dashboard per design. Route: delegated (same writer).
-- [ ] T3 — Browser validation desktop + 375px against the test DB. Route: inline.
+- [x] T1 — Admin dashboard per design. Route: inline (planned delegated; the writer subagent had no DesignSync access and transcribing the design to disk would double the cost). Commits `57a4d1a` (helpers + components), `8f74dbe` (view).
+- [x] T2 — Usuario dashboard per design. Route: inline (same reason). Commit `9321e3b`.
+- [~] T3 — Browser validation. Admin desktop: all sections render with real data, console clean. Usuario: NOT browser-checked — test credentials rejected ("Email o contraseña incorrectos."). 375px: only the login page checked (no horizontal scroll).
 
 ## Progress / evidence
+- `progressDesign.test.js`: RED observed (5 failed) → GREEN.
+- View tests were extended after the implementation (not RED-first); several assertions adapted to the new markup (e.g. 'Avance 25%' → '25%', '2/2 · prom. 70%' → '2/2 completados · 0 vencidos', open quizzes no longer show a score).
+- Final: vitest 28 files / 234 tests pass; `npm run build` OK.
+- Skipped: `tweaks-panel.jsx` (design-tool switcher, not product UI). Removed `StatusStackBar.vue`, `HBarChart.vue` and their test (superseded).
 
 ## Next step
-T1.
+Validate the usuario dashboard and both at 375px with a working usuario test account; then RDD assessment and PR.
