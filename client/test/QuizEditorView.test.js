@@ -71,6 +71,24 @@ describe('QuizEditorView — create then update', () => {
   })
 })
 
+describe('QuizEditorView — live sessions hidden', () => {
+  beforeEach(() => {
+    get.mockReset()
+  })
+
+  it('does not offer to create a live PIN session when editing a quiz', async () => {
+    routeParams.id = 'q1'
+    get.mockResolvedValue({ id: 'q1', title: 'Existing', description: '', total_time_seconds: 900, questions: [] })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('#quiz-title').element.value).toBe('Existing')
+    expect(wrapper.text()).not.toContain('Crear Sesión')
+    expect(wrapper.find('.session-launcher-panel').exists()).toBe(false)
+  })
+})
+
 describe('QuizEditorView — total_time_seconds (edited in minutes)', () => {
   beforeEach(() => {
     delete routeParams.id

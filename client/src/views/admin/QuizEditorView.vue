@@ -298,29 +298,6 @@
           </button>
         </form>
       </div>
-
-      <!-- Session launcher -->
-      <div class="card session-launcher-panel">
-        <h2 class="nunito" style="font-weight: 900; font-size: 20px; color: var(--text-primary); margin-bottom: 16px;">
-          Iniciar una Partida
-        </h2>
-        <button class="btn btn-green" @click="createSession" :disabled="creatingSession">
-          {{ creatingSession ? 'Creando sesión…' : '▶ Crear Sesión' }}
-        </button>
-        <p v-if="sessionPin" style="margin-top: 16px;">
-          <span style="color: var(--text-secondary); font-family: 'Nunito', sans-serif; font-size: 14px;">PIN generado:</span>
-          <strong style="font-family: 'Nunito', sans-serif; font-weight: 900; font-size: 28px; color: var(--accent-yellow); margin-left: 10px; letter-spacing: 4px;">
-            {{ sessionPin }}
-          </strong>
-          <router-link
-            :to="`/admin/sessions/${sessionPin}`"
-            class="btn btn-primary btn-sm"
-            style="margin-left: 14px; text-decoration: none;"
-          >
-            Abrir Sesión →
-          </router-link>
-        </p>
-      </div>
     </template>
   </div>
 </template>
@@ -329,12 +306,10 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useQuizStore } from '../../stores/quiz.js'
-import { useAdminApi } from '../../composables/useAdminApi.js'
 
 const route = useRoute()
 const router = useRouter()
 const store = useQuizStore()
-const api = useAdminApi()
 
 const quizId = ref(route.params.id || null)
 // isNew is derived from quizId, not the initial route param. This route uses
@@ -358,8 +333,6 @@ const newTfCorrect = ref('true')
 const newOpenCorrect = ref('')
 const editTfCorrect = ref('true')
 const editOpenCorrect = ref('')
-const creatingSession = ref(false)
-const sessionPin = ref('')
 
 onMounted(async () => {
   if (!isNew.value) {
@@ -493,19 +466,6 @@ async function removeOption(id, questionId) {
   await store.deleteOption(id, questionId)
   const q = questions.value.find(x => x.id === questionId)
   if (q) q.options = q.options.filter(o => o.id !== id)
-}
-
-async function createSession() {
-  creatingSession.value = true
-  quizError.value = ''
-  try {
-    const res = await api.post('/api/sessions', { quizId: quizId.value })
-    sessionPin.value = res.pin
-  } catch (e) {
-    quizError.value = e.message
-  } finally {
-    creatingSession.value = false
-  }
 }
 
 function typeLabel(type) {
@@ -700,11 +660,6 @@ function typeBadgeClass(type) {
 .btn-host   { background: rgba(198, 113, 57, 0.2); color: var(--accent-purple); border: 1px solid rgba(198, 113, 57, 0.3); }
 .btn-edit   { background: rgba(86, 99, 63, 0.15);  color: var(--accent-cyan);   border: 1px solid rgba(86, 99, 63, 0.25); }
 .btn-delete { background: rgba(140, 73, 26, 0.15);   color: var(--accent-coral);  border: 1px solid rgba(140, 73, 26, 0.25); }
-
-/* Session launcher */
-.session-launcher-panel {
-  padding: 24px;
-}
 
 @media (max-width: 600px) {
   .meta-fields { grid-template-columns: 1fr; }

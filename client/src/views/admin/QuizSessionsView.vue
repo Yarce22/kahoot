@@ -54,62 +54,18 @@
         </button>
       </div>
     </section>
-
-    <!-- Sesiones en vivo (PIN) — secondary: the original Kahoot-style host
-         flow, kept as its own section rather than merged into the list
-         above since the two have different shapes (players/leaderboard vs.
-         a single usuario's graded attempt). -->
-    <section>
-      <h2 class="nunito" style="font-weight: 800; font-size: 18px; color: var(--text-secondary); margin-bottom: 14px;">
-        Sesiones en vivo (PIN)
-      </h2>
-
-      <p v-if="sessionsError" class="error-msg" role="alert">{{ sessionsError }}</p>
-
-      <p v-if="loadingSessions" style="color: var(--text-secondary); font-family: 'Nunito', sans-serif; font-weight: 700;">
-        Cargando…
-      </p>
-
-      <p
-        v-else-if="!sessionsError && !sessions.length"
-        style="color: var(--text-secondary); font-family: 'Nunito', sans-serif; font-weight: 700; text-align: center; margin-top: 20px;"
-      >
-        Este cuestionario todavía no tiene sesiones finalizadas.
-      </p>
-
-      <div v-else class="session-list">
-        <button
-          v-for="s in sessions"
-          :key="s.id"
-          class="card session-row"
-          @click="openSession(s)"
-        >
-          <div class="session-row-main">
-            <span class="session-row-date">{{ formatDate(s.endedAt || s.createdAt) }}</span>
-            <span class="session-row-meta">PIN {{ s.pin }} · {{ s.playerCount }} jugador(es)</span>
-          </div>
-          <span class="session-row-chevron" aria-hidden="true">▸</span>
-        </button>
-      </div>
-    </section>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useQuizStore } from '../../stores/quiz.js'
 import { useAttemptsStore } from '../../stores/attempts.js'
 
 const route = useRoute()
 const router = useRouter()
-const store = useQuizStore()
 const attemptsStore = useAttemptsStore()
 const quizId = route.params.id
-
-const sessions = ref([])
-const loadingSessions = ref(false)
-const sessionsError = ref('')
 
 const attempts = ref([])
 const loadingAttempts = ref(false)
@@ -121,32 +77,20 @@ const STATUS_BADGES = { in_progress: 'badge-blue', completed: 'badge-green', exp
 function statusLabel(status) { return STATUS_LABELS[status] ?? status }
 function statusBadgeClass(status) { return STATUS_BADGES[status] ?? 'badge-blue' }
 
-// Independent try/catch per section — a failure fetching one history must
-// not hide the other, same reasoning QuizListView's Asignar popup uses to
-// keep its own errors scoped.
+// Live PIN sessions are hidden from the product for now (backend and routes
+// remain); only assigned-exam attempts are listed.
+// page_size 25 (the default): quiz-scoped history with no pagination UI yet —
+// a quiz assigned to more than 25 usuarios in one cycle is a future concern.
 onMounted(async () => {
-  loadingSessions.value = true
   loadingAttempts.value = true
-
-  const sessionsPromise = store.fetchQuizSessions(quizId)
-    .then((data) => { sessions.value = data })
-    .catch((e) => { sessionsError.value = `Error cargando el historial: ${e.message}` })
-    .finally(() => { loadingSessions.value = false })
-
-  // page_size 25 (the default): quiz-scoped history, same "no pagination UI
-  // yet" scope as the sessions list above — a quiz assigned to more than 25
-  // usuarios in one cycle is a future concern, not this fix's.
-  const attemptsPromise = attemptsStore.fetchAttempts({ quiz_id: quizId })
-    .then((data) => { attempts.value = data.attempts })
-    .catch((e) => { attemptsError.value = `Error cargando los exámenes: ${e.message}` })
-    .finally(() => { loadingAttempts.value = false })
-
-  await Promise.all([sessionsPromise, attemptsPromise])
+  try {
+    attempts.value = (await attemptsStore.fetchAttempts({ quiz_id: quizId })).attempts
+  } catch (e) {
+    attemptsError.value = `Error cargando los exámenes: ${e.message}`
+  } finally {
+    loadingAttempts.value = false
+  }
 })
-
-function openSession(session) {
-  router.push(`/admin/quizzes/${quizId}/sessions/${session.pin}`)
-}
 
 function openAttempt(attempt) {
   router.push(`/admin/quizzes/${quizId}/attempts/${attempt.id}`)
