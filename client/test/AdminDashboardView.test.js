@@ -9,6 +9,7 @@ vi.mock('../src/composables/useAdminApi.js', () => ({
 
 import AdminDashboardView from '../src/views/admin/AdminDashboardView.vue'
 import { useAuthStore } from '../src/stores/auth.js'
+import { summarize } from '../src/lib/progress.js'
 
 function mountAs(role = 'admin') {
   const pinia = createPinia()
@@ -49,7 +50,7 @@ describe('AdminDashboardView', () => {
     expect(w.text()).toContain('1/4')
     expect(w.find('[data-testid="overall"]').text()).toBe('3/6')
     expect(w.find('[data-testid="total-users"]').text()).toBe('2')
-    const bar = w.findAll('[role="progressbar"]')[0]
+    const bar = w.findAll('.dash-user [role="progressbar"]')[0]
     expect(bar.attributes('aria-valuenow')).toBe('25')
     expect(bar.attributes('aria-valuemin')).toBe('0')
     expect(bar.attributes('aria-valuemax')).toBe('100')
@@ -125,7 +126,8 @@ describe('AdminDashboardView', () => {
 
     const admin = mountAs('admin')
     await flushPromises()
-    expect(admin.find('select').exists()).toBe(false)
+    expect(admin.find('[data-testid="filter-punto"]').exists()).toBe(false)
+    expect(sa.find('[data-testid="filter-punto"]').exists()).toBe(true)
   })
 
   it('applies only the latest response when filter loads overlap out of order', async () => {
@@ -163,5 +165,129 @@ describe('AdminDashboardView', () => {
     const w = mountAs()
     await flushPromises()
     expect(w.find('a[href="/admin/quizzes"]').text()).toContain('Volver')
+  })
+
+  describe('filters and charts', () => {
+    const q = (o) => quiz({ assignmentId: 'x', ...o })
+    const done = (id, quizId, quizTitle, score) =>
+      q({ assignmentId: id, quizId, quizTitle, status: 'completed', attemptStatus: 'completed', scorePercent: score })
+    const todo = (id, quizId, quizTitle) => q({ assignmentId: id, quizId, quizTitle })
+    const withRows = (userId, fullName, puntoDeVenta, quizzes) =>
+      user({ userId, fullName, puntoDeVenta, quizzes, ...summarize(quizzes) })
+    const payload = () => ({
+      users: [
+        withRows('u1', 'Ana', 'Cerritos', [done('a1', 'q1', 'Seguridad', 80), todo('a2', 'q2', 'Higiene')]),
+        withRows('u2', 'Beto', 'Laureles', [done('b1', 'q1', 'Seguridad', 60)])
+      ]
+    })
+    async function ready(role = 'admin', data = payload()) {
+      get.mockResolvedValue(data)
+      const w = mountAs(role)
+      await flushPromises()
+      return w
+    }
+    const rowsText = (w) => w.findAll('.dash-user').map((r) => r.text())
+
+    it('shows KPI tiles for the whole data', async () => {
+      const w = await ready()
+      expect(w.find('[data-testid="total-users"]').text()).toBe('2')
+      expect(w.find('[data-testid="overall"]').text()).toBe('2/3')
+      expect(w.find('[data-testid="kpi-assigned"]').text()).toBe('3')
+      expect(w.find('[data-testid="kpi-completion"]').text()).toBe('67%')
+      expect(w.find('[data-testid="kpi-average"]').text()).toBe('70%')
+    })
+
+    it('filters by usuario without refetching', async () => {
+      const w = await ready()
+      const calls = get.mock.calls.length
+      await w.find('[data-testid="filter-user"]').setValue('u2')
+      expect(get.mock.calls.length).toBe(calls)
+      expect(w.find('[data-testid="total-users"]').text()).toBe('1')
+      expect(w.find('[data-testid="overall"]').text()).toBe('1/1')
+      expect(rowsText(w)).toHaveLength(1)
+      expect(rowsText(w)[0]).toContain('Beto')
+    })
+
+    it('filters by examen: recomputes metrics and hides usuarios without that quiz', async () => {
+      const w = await ready()
+      await w.find('[data-testid="filter-quiz"]').setValue('q2')
+      expect(w.find('[data-testid="total-users"]').text()).toBe('1')
+      expect(w.find('[data-testid="overall"]').text()).toBe('0/1')
+      expect(w.find('[data-testid="completion-u1"]').text()).toBe('Avance 0%')
+      expect(w.find('[data-testid="avg-u1"]').text()).toBe('—')
+      expect(rowsText(w).join()).not.toContain('Beto')
+    })
+
+    it('shows the no-match message and clears filters', async () => {
+      const w = await ready()
+      await w.find('[data-testid="filter-user"]').setValue('u2')
+      await w.find('[data-testid="filter-quiz"]').setValue('q2')
+      expect(w.text()).toContain('Ningún resultado con estos filtros.')
+      await w.find('[data-testid="clear-filters"]').trigger('click')
+      expect(w.find('[data-testid="clear-filters"]').exists()).toBe(false)
+      expect(w.find('[data-testid="total-users"]').text()).toBe('2')
+    })
+
+    it('resets a usuario selection that vanished after a punto reload', async () => {
+      const w = await ready('superadmin')
+      await w.find('[data-testid="filter-user"]').setValue('u2')
+      get.mockResolvedValue({ users: [payload().users[0]] })
+      await w.find('[data-testid="filter-punto"]').setValue('Cerritos')
+      await flushPromises()
+      expect(w.find('[data-testid="filter-user"]').element.value).toBe('')
+      expect(w.find('[data-testid="total-users"]').text()).toBe('1')
+    })
+
+    it('counts active filters and marks the active selects', async () => {
+      const w = await ready()
+      expect(w.find('[data-testid="filter-count"]').exists()).toBe(false)
+      await w.find('[data-testid="filter-user"]').setValue('u2')
+      await w.find('[data-testid="filter-quiz"]').setValue('q2')
+      expect(w.find('[data-testid="filter-count"]').text()).toBe('2')
+      expect(w.find('[data-testid="filter-user"]').classes()).toContain('is-active')
+    })
+
+    it('clears the punto filter too and refetches every store', async () => {
+      const w = await ready('superadmin')
+      await w.find('[data-testid="filter-punto"]').setValue('Laureles')
+      await flushPromises()
+      expect(w.find('[data-testid="filter-count"]').text()).toBe('1')
+      await w.find('[data-testid="clear-filters"]').trigger('click')
+      await flushPromises()
+      expect(w.find('[data-testid="filter-punto"]').element.value).toBe('')
+      expect(get).toHaveBeenLastCalledWith('/api/dashboard/progress')
+      expect(w.find('[data-testid="clear-filters"]').exists()).toBe(false)
+    })
+
+    it('renders the punto chart only with more than one punto', async () => {
+      const w = await ready()
+      expect(w.text()).toContain('Avance por punto de venta')
+      await w.find('[data-testid="filter-user"]').setValue('u1')
+      expect(w.text()).not.toContain('Avance por punto de venta')
+    })
+
+    it('renders usuarios without a name and quizzes without a title', async () => {
+      const w = await ready('admin', { users: [
+        withRows('u1', null, 'Cerritos', [done('a1', 'q1', null, 80)]),
+        withRows('u2', 'Beto', 'Cerritos', [done('b1', 'q2', 'Higiene', 60)])
+      ] })
+      expect(w.find('[data-testid="total-users"]').text()).toBe('2')
+      expect(w.find('[data-testid="filter-user"]').text()).toContain('(sin nombre)')
+    })
+
+    it('associates each filter label with its select', async () => {
+      const w = await ready('superadmin')
+      for (const [id, text] of [['filter-punto', 'Punto de venta'], ['filter-user', 'Usuario'], ['filter-quiz', 'Examen']]) {
+        expect(w.find('select#' + id).exists()).toBe(true)
+        expect(w.find('label[for="' + id + '"]').text()).toBe(text)
+      }
+    })
+
+    it('renders the status chart and per-exam bars', async () => {
+      const w = await ready()
+      expect(w.text()).toContain('Estado de los exámenes')
+      expect(w.text()).toContain('Avance por examen')
+      expect(w.text()).toContain('2/2 · prom. 70%')
+    })
   })
 })
