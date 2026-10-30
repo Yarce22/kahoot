@@ -56,7 +56,8 @@ describe('UserDashboardView', () => {
     const t = w.text()
     for (const s of ['Seguridad', 'Completado', 'Pendiente', 'En progreso', 'Vencido']) expect(t).toContain(s)
     expect(w.find('[data-testid="score-a1"]').text()).toBe('90%')
-    expect(w.find('[data-testid="score-a2"]').text()).toBe('—')
+    // Open quizzes live in "Por hacer" without a score; only completed ones show one.
+    expect(w.find('[data-testid="score-a2"]').exists()).toBe(false)
   })
 
   it('shows a dash when the average is null', async () => {
@@ -99,6 +100,16 @@ describe('UserDashboardView', () => {
     expect(links).toHaveLength(1)
     expect(links[0].attributes('href')).toBe('/user/attempts/att-1/result')
     expect(links[0].text()).toContain('Ver resultado')
+  })
+
+  it('offers to start or continue open quizzes and explains expired ones', async () => {
+    get.mockResolvedValue(progress())
+    const w = mountView()
+    await flushPromises()
+    expect(w.find('a[href="/user/quizzes/a2/attempt"]').text()).toBe('Comenzar')
+    expect(w.find('a[href="/user/quizzes/a3/attempt"]').text()).toBe('Continuar')
+    expect(w.find('a[href="/user/quizzes/a4/attempt"]').exists()).toBe(false)
+    expect(w.text()).toContain('Te falta 1 examen, 1 vencido.')
   })
 
   it('links back to the quiz list', async () => {

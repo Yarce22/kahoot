@@ -1,14 +1,17 @@
 <template>
-  <div class="admin-dashboard-view view-transition-enter">
+  <div class="dash-view view-transition-enter">
     <div class="dash-header">
-      <h1 class="nunito dash-title">Dashboard</h1>
+      <div>
+        <h1 class="nunito dash-title">Dashboard</h1>
+        <p class="dash-sub">{{ scopeLabel }} · datos al {{ fullDate(now.toISOString()) }}</p>
+      </div>
       <router-link to="/admin/quizzes" class="btn btn-ghost" style="font-size: 14px; padding: 8px 16px;">
         ← Volver
       </router-link>
     </div>
 
     <!-- Plain admins are pinned to their own store server-side; only a
-         superadmin can choose one. Usuario/Examen narrow the loaded data
+         superadmin can choose one. Usuario/Examen/Estado narrow the loaded data
          client-side. -->
     <section class="card dash-filters" aria-labelledby="filters-title">
       <div class="dash-filters-head">
@@ -23,7 +26,7 @@
       <div class="dash-filters-grid">
         <div v-if="auth.isSuperadmin" class="dash-filter">
           <label for="filter-punto">Punto de venta</label>
-          <select id="filter-punto" v-model="puntoDeVenta" :class="{ 'is-active': puntoDeVenta }" data-testid="filter-punto" @change="load">
+          <select id="filter-punto" v-model="puntoDeVenta" :class="{ 'is-active': puntoDeVenta }" data-testid="filter-punto" @change="onPuntoChange">
             <option value="">Todos</option>
             <option v-for="p in PUNTOS_DE_VENTA" :key="p" :value="p">{{ p }}</option>
           </select>
@@ -42,6 +45,13 @@
             <option v-for="q in quizOptions" :key="q.quizId" :value="q.quizId">{{ q.quizTitle }}</option>
           </select>
         </div>
+        <div class="dash-filter">
+          <label for="filter-status">Estado</label>
+          <select id="filter-status" v-model="estado" :class="{ 'is-active': estado }" data-testid="filter-status">
+            <option value="">Todos</option>
+            <option v-for="s in STATUS_ORDER" :key="s" :value="s">{{ s }}</option>
+          </select>
+        </div>
       </div>
     </section>
 
@@ -50,78 +60,166 @@
     <p v-if="loading" class="dash-muted">Cargando…</p>
 
     <template v-else-if="users">
-      <div class="dash-kpis">
-        <div class="card kpi"><strong class="kpi-value" data-testid="total-users">{{ filteredUsers.length }}</strong><span class="kpi-label">Usuarios</span></div>
-        <div class="card kpi"><strong class="kpi-value" data-testid="kpi-assigned">{{ totals.assigned }}</strong><span class="kpi-label">Asignados</span></div>
-        <div class="card kpi"><strong class="kpi-value" data-testid="overall">{{ totals.completed }}/{{ totals.assigned }}</strong><span class="kpi-label">Completados</span></div>
-        <div class="card kpi"><strong class="kpi-value" data-testid="kpi-completion">{{ pct(totals.completionPercent) }}</strong><span class="kpi-label">Avance</span></div>
-        <div class="card kpi"><strong class="kpi-value" data-testid="kpi-average">{{ pct(totals.averageScore) }}</strong><span class="kpi-label">Promedio</span></div>
-      </div>
-
       <p v-if="!totals.assigned" class="dash-muted dash-empty">
-        {{ filtersActive ? 'Ningún resultado con estos filtros.' : 'No hay exámenes asignados.' }}
+        {{ activeCount ? 'Ningún resultado con estos filtros.' : 'No hay exámenes asignados.' }}
       </p>
 
       <template v-else>
+        <div class="dash-kpis">
+          <div v-for="k in kpis" :key="k.label" :class="['card', 'kpi', k.alert && 'kpi-alert']">
+            <span class="kpi-label">{{ k.label }}</span>
+            <strong class="kpi-value" :data-testid="k.testid">{{ k.value }}</strong>
+            <div v-if="k.bar != null" class="track kpi-bar"><div class="fill" :style="{ width: k.bar + '%' }"></div></div>
+            <span v-else-if="k.delta != null" class="kpi-sub">
+              <b :class="k.delta >= 0 ? 'up' : 'down'">{{ k.delta >= 0 ? '▲' : '▼' }} {{ Math.abs(k.delta) }}</b> vs. semana anterior
+            </span>
+            <span v-else class="kpi-sub">{{ k.sub }}</span>
+          </div>
+        </div>
+
         <div class="dash-charts">
           <section class="card chart-card">
-            <h2 class="nunito chart-title">Estado de los exámenes</h2>
-            <StatusStackBar :counts="counts" />
+            <h2 class="chart-title">Estado de los exámenes</h2>
+            <StackBar :counts="counts" :height="18" />
+            <StatusLegend :counts="counts" />
           </section>
           <section class="card chart-card">
-            <h2 class="nunito chart-title">Avance por examen</h2>
-            <HBarChart title="Avance por examen" :items="quizItems" />
+            <div class="chart-head">
+              <h2 class="chart-title">Distribución de puntajes</h2>
+              <span class="chart-note">{{ scores.length }} exámenes calificados</span>
+            </div>
+            <ScoreHistogram :scores="scores" />
           </section>
-          <section v-if="puntoItems.length > 1" class="card chart-card chart-wide">
-            <h2 class="nunito chart-title">Avance por punto de venta</h2>
-            <HBarChart title="Avance por punto de venta" :items="puntoItems" />
+
+          <section class="card chart-card chart-wide">
+            <div class="chart-head">
+              <h2 class="chart-title">Actividad</h2>
+              <div class="seg-ctrl" role="group" aria-label="Rango de días">
+                <button v-for="n in [7, 14, 21]" :key="n" type="button" :class="{ on: range === n }" :aria-pressed="range === n" @click="range = n">{{ n }} días</button>
+              </div>
+            </div>
+            <div class="activity">
+              <div>
+                <div class="act-chart">
+                  <div v-for="x in days" :key="x.d" class="act-col" :title="`${x.date.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })}: ${x.n} completados`">
+                    <span class="act-n">{{ x.n || '' }}</span>
+                    <div class="act-track"><div class="act-bar" :style="{ height: (x.n / dayMax) * 100 + '%' }"></div></div>
+                    <span class="act-l">{{ x.d === 0 ? 'Hoy' : x.date.getDate() }}</span>
+                  </div>
+                </div>
+                <p class="chart-note" style="margin-top: 10px">Exámenes completados por día · {{ days.reduce((n, x) => n + x.n, 0) }} en total</p>
+              </div>
+              <div class="recent">
+                <h3 class="mini-title">Últimos completados</h3>
+                <p v-if="!recent.length" class="dash-muted">Sin entregas todavía.</p>
+                <ul v-else>
+                  <li v-for="r in recent" :key="r.assignmentId">
+                    <div class="recent-main"><strong>{{ r.user.fullName }}</strong><span>{{ r.quizTitle }}</span></div>
+                    <ScorePill :value="r.scorePercent" />
+                    <span class="recent-when">{{ relDate(r.submittedAt, now) }}</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </section>
+
+          <section class="card chart-card chart-wide">
+            <h2 class="chart-title">Avance por examen</h2>
+            <div class="gtable">
+              <div class="grow ghead"><span>Examen</span><span>Estado</span><span>Avance</span><span>Promedio</span><span class="hide-sm">Usuarios</span></div>
+              <div v-for="g in quizGroups" :key="g.key" class="grow" :data-testid="'quiz-row-' + g.key">
+                <strong class="g-name">{{ g.label }}</strong>
+                <div class="g-stack">
+                  <StackBar :counts="g.counts" :height="10" />
+                  <span class="caption">{{ g.completed }}/{{ g.assigned }} completados · {{ g.counts.Vencido }} vencidos</span>
+                </div>
+                <span class="u-num">{{ g.completionPercent }}%</span>
+                <span><ScorePill :value="g.averageScore" /></span>
+                <span class="u-num hide-sm">{{ g.people }}</span>
+              </div>
+            </div>
+          </section>
+
+          <section v-if="puntoGroups.length > 1" class="card chart-card">
+            <h2 class="chart-title">Avance por punto de venta</h2>
+            <ul class="punto-list">
+              <li v-for="(g, i) in puntoGroups" :key="g.key">
+                <span class="punto-rank">{{ i + 1 }}</span>
+                <div class="punto-main">
+                  <div class="punto-head"><strong>{{ g.label }}</strong><span>{{ g.completionPercent }}%</span></div>
+                  <div class="track" role="progressbar" :aria-label="'Avance de ' + g.label" :aria-valuenow="g.completionPercent" aria-valuemin="0" aria-valuemax="100">
+                    <div class="fill" :style="{ width: g.completionPercent + '%' }"></div>
+                  </div>
+                  <span class="caption">{{ g.completed }}/{{ g.assigned }} · {{ g.people }} usuarios · prom. {{ pct(g.averageScore) }}</span>
+                </div>
+              </li>
+            </ul>
+          </section>
+
+          <section :class="['card', 'chart-card', puntoGroups.length > 1 ? '' : 'chart-wide']">
+            <div class="chart-head">
+              <h2 class="chart-title">Requieren atención</h2>
+              <span class="chart-note">{{ attention.length ? `${attention.length} usuarios` : '' }}</span>
+            </div>
+            <p v-if="!attention.length" class="dash-muted">Nadie con vencidos, promedio bajo ni inactividad.</p>
+            <ul v-else class="attn">
+              <li v-for="a in attention" :key="a.u.userId" :data-testid="'attn-' + a.u.userId">
+                <div class="attn-main"><strong>{{ a.u.fullName }}</strong><span>{{ a.u.puntoDeVenta }} · {{ a.u.completed }}/{{ a.u.assigned }}</span></div>
+                <div class="attn-tags"><span v-for="r in a.reasons" :key="r" class="tag">{{ r }}</span></div>
+              </li>
+            </ul>
+            <p v-if="bestUser" class="attn-best">Mejor promedio: <strong>{{ bestUser.fullName }}</strong> · {{ bestUser.averageScore }}%</p>
           </section>
         </div>
 
-        <h2 class="nunito chart-title dash-section">Usuarios</h2>
-      <ul class="dash-list">
-        <li v-for="u in filteredUsers" :key="u.userId" class="card dash-user">
-          <div class="dash-user-head">
-            <div class="dash-user-name">
-              <strong>{{ u.fullName }}</strong>
-              <span class="dash-muted">{{ u.puntoDeVenta }}</span>
-            </div>
-            <span class="dash-count">{{ u.completed }}/{{ u.assigned }}</span>
-            <div
-              class="bar"
-              role="progressbar"
-              :aria-label="'Avance de ' + u.fullName"
-              :aria-valuenow="u.completionPercent"
-              aria-valuemin="0"
-              aria-valuemax="100"
-            >
-              <div class="bar-fill" :style="{ width: u.completionPercent + '%' }"></div>
-            </div>
-            <span class="dash-metric" :data-testid="'completion-' + u.userId">
-              <span class="dash-metric-label">Avance</span> {{ pct(u.completionPercent) }}
-            </span>
-            <span class="dash-metric" :data-testid="'average-' + u.userId">
-              <span class="dash-metric-label">Promedio</span> <span :data-testid="'avg-' + u.userId">{{ pct(u.averageScore) }}</span>
-            </span>
-            <button
-              class="btn btn-ghost dash-toggle"
-              style="font-size: 13px; padding: 6px 12px;"
-              :data-testid="'toggle-' + u.userId"
-              :aria-expanded="isOpen(u.userId)"
-              @click="toggle(u.userId)"
-            >
-              {{ isOpen(u.userId) ? 'Ocultar' : 'Ver exámenes' }}
-            </button>
+        <div class="chart-head" style="margin-bottom: 12px">
+          <h2 class="chart-title">Usuarios</h2>
+          <span class="chart-note">{{ filteredUsers.length }} usuarios · clic en una columna para ordenar</span>
+        </div>
+        <div class="card utable">
+          <div class="urow uhead">
+            <button v-for="h in sortHeads.slice(0, 1)" :key="h.k" type="button" :class="['th', sort.key === h.k && 'is-sorted']" @click="sortBy(h.k)">{{ h.label }}<span class="th-arrow">{{ arrow(h.k) }}</span></button>
+            <span class="th">Estado de exámenes</span>
+            <button v-for="h in sortHeads.slice(1)" :key="h.k" type="button" :class="['th', h.cls, sort.key === h.k && 'is-sorted']" @click="sortBy(h.k)">{{ h.label }}<span class="th-arrow">{{ arrow(h.k) }}</span></button>
+            <span></span>
           </div>
-          <ul v-if="isOpen(u.userId)" class="dash-quizzes">
-            <li v-for="q in u.quizzes" :key="q.assignmentId" class="dash-quiz">
-              <span class="dash-quiz-title">{{ q.quizTitle }}</span>
-              <span class="badge">{{ statusLabel(q) }}</span>
-              <span :data-testid="'score-' + q.assignmentId">{{ pct(q.scorePercent) }}</span>
-            </li>
-          </ul>
-        </li>
-      </ul>
+          <div v-for="u in sortedUsers" :key="u.userId" :class="['ublock', 'dash-user', isOpen(u.userId) && 'is-open']">
+            <div class="urow" @click="toggle(u.userId)">
+              <div class="u-name"><strong>{{ u.fullName }}</strong><span>{{ u.puntoDeVenta }}<template v-if="u.email"> · {{ u.email }}</template></span></div>
+              <div class="u-stack">
+                <StackBar :counts="statusCounts(u.quizzes)" :height="10" />
+                <span class="caption">{{ u.completed }}/{{ u.assigned }} completados</span>
+              </div>
+              <span class="u-num" role="progressbar" :aria-label="'Avance de ' + u.fullName" :aria-valuenow="u.completionPercent" aria-valuemin="0" aria-valuemax="100" :data-testid="'completion-' + u.userId">{{ u.completionPercent }}%</span>
+              <span :data-testid="'average-' + u.userId"><span :data-testid="'avg-' + u.userId"><ScorePill :value="u.averageScore" /></span></span>
+              <span :class="['u-num', 'hide-sm', statusCounts(u.quizzes).Vencido ? 'is-alert' : 'is-zero']">{{ statusCounts(u.quizzes).Vencido }}</span>
+              <span class="u-last hide-sm">{{ relDate(lastActivity(u), now) }}</span>
+              <button
+                type="button"
+                class="u-toggle"
+                :data-testid="'toggle-' + u.userId"
+                :aria-expanded="isOpen(u.userId)"
+                @click.stop="toggle(u.userId)"
+              >
+                {{ isOpen(u.userId) ? 'Ocultar' : 'Ver exámenes' }}
+              </button>
+            </div>
+            <ul v-if="isOpen(u.userId)" class="uquizzes">
+              <li v-for="q in u.quizzes" :key="q.assignmentId">
+                <span class="uq-title">{{ q.quizTitle }}<span v-if="q.cycle > 1" class="cycle">ciclo {{ q.cycle }}</span></span>
+                <StatusBadge :label="statusLabel(q)" />
+                <span :data-testid="'score-' + q.assignmentId"><ScorePill :value="q.scorePercent" /></span>
+                <span class="uq-date">{{ q.submittedAt ? fullDate(q.submittedAt) : '—' }}</span>
+                <router-link
+                  v-if="q.attemptStatus === 'completed' && q.attemptId"
+                  class="uq-link"
+                  :to="`/admin/quizzes/${q.quizId}/attempts/${q.attemptId}`"
+                >Ver intento →</router-link>
+                <span v-else class="uq-link"></span>
+              </li>
+            </ul>
+          </div>
+        </div>
       </template>
     </template>
   </div>
@@ -132,32 +230,51 @@ import { computed, onMounted, ref } from 'vue'
 import { useAssignmentsStore } from '../../stores/assignments.js'
 import { useAuthStore } from '../../stores/auth.js'
 import { PUNTOS_DE_VENTA } from '../../lib/puntosDeVenta.js'
-import { byPunto, byQuiz, pct, statusCounts, statusLabel, summarize } from '../../lib/progress.js'
-import StatusStackBar from '../../components/dashboard/StatusStackBar.vue'
-import HBarChart from '../../components/dashboard/HBarChart.vue'
+import {
+  STATUS_ORDER, attentionReasons, daysAgo, fullDate, lastActivity, pct, relDate, statusCounts, statusLabel, summarize
+} from '../../lib/progress.js'
+import StackBar from '../../components/dashboard/StackBar.vue'
+import StatusLegend from '../../components/dashboard/StatusLegend.vue'
+import StatusBadge from '../../components/dashboard/StatusBadge.vue'
+import ScorePill from '../../components/dashboard/ScorePill.vue'
+import ScoreHistogram from '../../components/dashboard/ScoreHistogram.vue'
+import '../../components/dashboard/dashboard.css'
 
 const store = useAssignmentsStore()
 const auth = useAuthStore()
+const now = new Date()
+const DAY = 864e5
 
 const users = ref(null)
 const loading = ref(true)
 const error = ref(null)
 const puntoDeVenta = ref('')
-const open = ref(new Set())
-
 const userId = ref('')
 const quizId = ref('')
+const estado = ref('')
+const open = ref(new Set())
+const range = ref(14)
+const sort = ref({ key: 'completionPercent', dir: 'asc' })
 
-const activeCount = computed(() => [puntoDeVenta.value, userId.value, quizId.value].filter(Boolean).length)
-const filtersActive = computed(() => activeCount.value > 0)
+const scopeLabel = computed(() => {
+  if (auth.isSuperadmin) return puntoDeVenta.value || 'Todos los puntos de venta'
+  const punto = users.value?.[0]?.puntoDeVenta
+  return punto ? `Punto de venta: ${punto}` : 'Tu punto de venta'
+})
+
+const activeCount = computed(() => [puntoDeVenta.value, userId.value, quizId.value, estado.value].filter(Boolean).length)
 function clearFilters() {
   userId.value = ''
   quizId.value = ''
+  estado.value = ''
   // Punto is a server-side filter: clearing it needs a refetch.
   if (puntoDeVenta.value) {
     puntoDeVenta.value = ''
     load()
   }
+}
+function onPuntoChange() {
+  load()
 }
 
 const userOptions = computed(() =>
@@ -169,40 +286,105 @@ const quizOptions = computed(() => {
   return [...map].map(([id, quizTitle]) => ({ quizId: id, quizTitle })).sort((a, b) => (a.quizTitle ?? '').localeCompare(b.quizTitle ?? ''))
 })
 
-// Usuario narrows the list; Examen narrows each usuario's quizzes and
-// recomputes their metrics, dropping usuarios left with none. Without an exam
-// filter the server's per-usuario metrics are kept as-is.
+// Usuario narrows the list; Examen/Estado narrow each usuario's quizzes and
+// recompute their metrics, dropping usuarios left with none. Without those
+// filters the server's per-usuario metrics are kept as-is.
 const filteredUsers = computed(() => {
   let list = users.value ?? []
   if (userId.value) list = list.filter((u) => u.userId === userId.value)
-  if (!quizId.value) return list
+  if (!quizId.value && !estado.value) return list
   return list
     .map((u) => {
-      const quizzes = u.quizzes.filter((q) => q.quizId === quizId.value)
+      const quizzes = u.quizzes.filter((q) => (!quizId.value || q.quizId === quizId.value) && (!estado.value || statusLabel(q) === estado.value))
       return { ...u, quizzes, ...summarize(quizzes) }
     })
     .filter((u) => u.quizzes.length)
 })
 
-const rows = computed(() => filteredUsers.value.flatMap((u) => u.quizzes))
+const rows = computed(() => filteredUsers.value.flatMap((u) => u.quizzes.map((q) => ({ ...q, user: u }))))
 const counts = computed(() => statusCounts(rows.value))
 const totals = computed(() => {
   const assigned = filteredUsers.value.reduce((n, u) => n + u.assigned, 0)
   const completed = filteredUsers.value.reduce((n, u) => n + u.completed, 0)
-  return {
-    assigned,
-    completed,
-    completionPercent: assigned ? Math.round((completed / assigned) * 100) : 0,
-    averageScore: summarize(rows.value).averageScore
-  }
+  return { assigned, completed, completionPercent: assigned ? Math.round((completed / assigned) * 100) : 0, averageScore: summarize(rows.value).averageScore }
 })
-const caption = (r) => `${r.completed}/${r.assigned} · prom. ${pct(r.averageScore)}`
-const quizItems = computed(() =>
-  byQuiz(filteredUsers.value).map((q) => ({ key: q.quizId, label: q.quizTitle, value: q.completionPercent, caption: caption(q) }))
+const scores = computed(() => rows.value.filter((r) => r.attemptStatus === 'completed' && typeof r.scorePercent === 'number').map((r) => r.scorePercent))
+const done = computed(() => rows.value.filter((r) => r.submittedAt))
+
+function group(keyFn, labelFn) {
+  const m = new Map()
+  for (const r of rows.value) {
+    const k = keyFn(r)
+    if (!m.has(k)) m.set(k, { key: k, label: labelFn(r), rows: [] })
+    m.get(k).rows.push(r)
+  }
+  return [...m.values()]
+    .map((g) => ({ ...g, ...summarize(g.rows), counts: statusCounts(g.rows), people: new Set(g.rows.map((r) => r.user.userId)).size }))
+    .sort((a, b) => b.completionPercent - a.completionPercent || (a.label ?? '').localeCompare(b.label ?? ''))
+}
+const quizGroups = computed(() => group((r) => r.quizId, (r) => r.quizTitle))
+const puntoGroups = computed(() => group((r) => r.user.puntoDeVenta ?? 'Sin punto', (r) => r.user.puntoDeVenta ?? 'Sin punto'))
+
+const kpis = computed(() => {
+  const c = counts.value
+  const last7 = done.value.filter((r) => daysAgo(r.submittedAt, now) < 7).length
+  const prev7 = done.value.filter((r) => { const d = daysAgo(r.submittedAt, now); return d >= 7 && d < 14 }).length
+  const fullyDone = filteredUsers.value.filter((u) => u.assigned && u.completed === u.assigned).length
+  const expiredUsers = new Set(rows.value.filter((r) => statusLabel(r) === 'Vencido').map((r) => r.user.userId)).size
+  const s = scores.value
+  return [
+    { label: 'Usuarios', testid: 'total-users', value: filteredUsers.value.length, sub: `${fullyDone} con todo completado` },
+    { label: 'Asignados', testid: 'kpi-assigned', value: totals.value.assigned, sub: `${quizGroups.value.length} exámenes distintos` },
+    { label: 'Completados', testid: 'overall', value: `${totals.value.completed}/${totals.value.assigned}`, delta: last7 - prev7 },
+    { label: 'Avance', testid: 'kpi-completion', value: pct(totals.value.completionPercent), bar: totals.value.completionPercent },
+    { label: 'Promedio', testid: 'kpi-average', value: pct(totals.value.averageScore), sub: s.length ? `rango ${Math.min(...s)}–${Math.max(...s)}%` : 'sin puntajes' },
+    { label: 'Vencidos', value: c.Vencido, sub: `en ${expiredUsers} usuario${expiredUsers === 1 ? '' : 's'}`, alert: c.Vencido > 0 }
+  ]
+})
+
+const days = computed(() =>
+  Array.from({ length: range.value }, (_, i) => {
+    const d = range.value - 1 - i
+    return { d, n: done.value.filter((r) => daysAgo(r.submittedAt, now) === d).length, date: new Date(now - d * DAY) }
+  })
 )
-const puntoItems = computed(() =>
-  byPunto(filteredUsers.value).map((p) => ({ key: p.puntoDeVenta, label: p.puntoDeVenta, value: p.completionPercent, caption: caption(p) }))
+const dayMax = computed(() => Math.max(1, ...days.value.map((x) => x.n)))
+const recent = computed(() => [...done.value].sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)).slice(0, 5))
+
+// Most urgent first: expired quizzes weigh most, then a failing average and no activity.
+const attention = computed(() =>
+  filteredUsers.value
+    .map((u) => ({
+      u,
+      reasons: attentionReasons(u, now),
+      weight: statusCounts(u.quizzes).Vencido * 3 + (u.averageScore != null && u.averageScore < 60 ? 2 : 0) + (lastActivity(u) ? 0 : 2)
+    }))
+    .filter((a) => a.reasons.length)
+    .sort((a, b) => b.weight - a.weight)
+    .slice(0, 5)
 )
+const bestUser = computed(() => [...filteredUsers.value].filter((u) => u.averageScore != null).sort((a, b) => b.averageScore - a.averageScore)[0])
+
+const sortHeads = [
+  { k: 'fullName', label: 'Usuario' },
+  { k: 'completionPercent', label: 'Avance' },
+  { k: 'averageScore', label: 'Promedio' },
+  { k: 'expired', label: 'Vencidos', cls: 'hide-sm' },
+  { k: 'last', label: 'Última actividad', cls: 'hide-sm' }
+]
+const sortValue = (u, k) => (k === 'last' ? lastActivity(u) ?? '' : k === 'expired' ? statusCounts(u.quizzes).Vencido : u[k] ?? (k === 'fullName' ? '' : -1))
+const sortedUsers = computed(() => {
+  const { key, dir } = sort.value
+  return [...filteredUsers.value].sort((a, b) => {
+    const va = sortValue(a, key), vb = sortValue(b, key)
+    const r = typeof va === 'string' ? va.localeCompare(vb) : va - vb
+    return dir === 'asc' ? r : -r
+  })
+})
+function sortBy(key) {
+  sort.value = { key, dir: sort.value.key === key && sort.value.dir === 'desc' ? 'asc' : 'desc' }
+}
+const arrow = (k) => (sort.value.key === k ? (sort.value.dir === 'asc' ? '↑' : '↓') : '')
 
 const isOpen = (id) => open.value.has(id)
 function toggle(id) {
@@ -237,68 +419,3 @@ async function load() {
 
 onMounted(load)
 </script>
-
-<style scoped>
-.admin-dashboard-view { min-height: 100vh; padding: 32px 24px 40px; position: relative; z-index: 1; }
-.dash-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; flex-wrap: wrap; gap: 14px; }
-.dash-title { font-weight: 900; font-size: 28px; color: var(--text-primary); }
-.dash-muted { color: var(--text-secondary); font-family: 'Nunito', sans-serif; font-weight: 700; }
-.dash-empty { text-align: center; margin-top: 40px; }
-.dash-filters { padding: 16px 20px 18px; margin-bottom: 20px; font-family: 'Nunito', sans-serif; }
-.dash-filters-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 28px; margin-bottom: 12px; }
-.dash-filters-title { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; font-weight: 800; color: var(--text-primary); }
-.dash-filters-count { min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px; background: var(--salvia-700); color: #fff; font-size: 12px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
-.dash-clear { border: none; background: none; padding: 4px 6px; border-radius: var(--radius-md); color: var(--terracota-700); font-family: inherit; font-size: 14px; font-weight: 800; cursor: pointer; }
-.dash-clear:hover { text-decoration: underline; }
-.dash-clear:focus-visible { outline: 2px solid var(--terracota-700); outline-offset: 2px; }
-.dash-filters-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 16px; }
-.dash-filter { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.dash-filter label { font-weight: 800; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--text-secondary); }
-/* Native select with the arrow redrawn, so it matches the card palette. */
-.dash-filter select {
-  appearance: none; width: 100%; padding: 10px 38px 10px 14px; cursor: pointer;
-  border: 1.5px solid var(--neutral-300); border-radius: var(--radius-md);
-  background: var(--neutral-100) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%2356633f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 14px center;
-  color: var(--text-primary); font-family: inherit; font-weight: 700; font-size: 14px; text-overflow: ellipsis;
-  transition: border-color .15s, box-shadow .15s, background-color .15s;
-}
-.dash-filter select:hover { border-color: var(--salvia-500); }
-.dash-filter select:focus-visible { outline: none; border-color: var(--salvia-700); box-shadow: 0 0 0 3px var(--salvia-200); }
-.dash-filter select.is-active { border-color: var(--salvia-700); background-color: var(--salvia-100); }
-.dash-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 20px; }
-.kpi { display: flex; flex-direction: column; gap: 2px; padding: 16px 18px; font-family: 'Nunito', sans-serif; }
-.kpi-value { font-size: 28px; font-weight: 900; color: var(--text-primary); }
-.kpi-label { font-size: 13px; font-weight: 700; color: var(--text-secondary); }
-.dash-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 28px; }
-.chart-card { padding: 18px 20px; min-width: 0; }
-.chart-wide { grid-column: 1 / -1; }
-.chart-title { font-weight: 800; font-size: 16px; color: var(--text-primary); margin-bottom: 14px; }
-.dash-section { margin-bottom: 12px; }
-@media (max-width: 720px) {
-  .admin-dashboard-view { padding: 24px 16px 32px; }
-  .dash-charts { grid-template-columns: minmax(0, 1fr); }
-  .dash-filters-grid { grid-template-columns: minmax(0, 1fr); }
-  .dash-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .kpi:last-child:nth-child(odd) { grid-column: 1 / -1; }
-}
-.dash-list { list-style: none; padding: 0; display: grid; gap: 12px; }
-.dash-user { padding: 16px 20px; font-family: 'Nunito', sans-serif; color: var(--text-primary); }
-/* Fixed metric columns keep the bars aligned across rows, whatever the name or
-   button text length. */
-.dash-user-head { display: grid; grid-template-columns: minmax(160px, 1fr) 48px 140px 110px 130px 120px; align-items: center; gap: 14px; }
-.dash-user-name { display: flex; flex-direction: column; min-width: 0; }
-.dash-count { text-align: right; }
-.dash-metric { white-space: nowrap; }
-.dash-metric-label { color: var(--text-secondary); font-size: 13px; font-weight: 700; }
-.dash-toggle { justify-self: end; }
-@media (max-width: 720px) {
-  .dash-user-head { grid-template-columns: 1fr auto; }
-  .dash-user-head .bar { width: 100%; }
-  .dash-count { text-align: left; }
-}
-.bar { width: 140px; height: 10px; border-radius: var(--radius-md); background: var(--bg-elevated); overflow: hidden; }
-.bar-fill { height: 100%; background: var(--accent-green); }
-.dash-quizzes { list-style: none; padding: 12px 0 0; display: grid; gap: 8px; }
-.dash-quiz { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-.dash-quiz-title { flex: 1; min-width: 160px; }
-</style>
