@@ -74,7 +74,6 @@
               <p class="q-text">{{ q.text }}</p>
               <div class="q-actions">
                 <span :class="['badge', typeBadgeClass(q.type)]">{{ typeLabel(q.type) }}</span>
-                <span class="badge badge-orange">{{ q.time_limit_seconds }}s</span>
               </div>
 
               <!-- Options for closed / multiple questions -->
@@ -127,10 +126,6 @@
                     <option value="true_false">Verdadero / Falso</option>
                     <option value="open">Respuesta abierta</option>
                   </select>
-                </div>
-                <div class="field-group">
-                  <label class="field-label-sm">Límite de tiempo (seg)</label>
-                  <input v-model.number="editQuestionForm.time_limit_seconds" class="input-sm" type="number" min="5" max="120" />
                 </div>
 
                 <template v-if="editQuestionForm.type === 'true_false'">
@@ -197,10 +192,6 @@
             <div class="field-group" style="grid-column: 1 / -1;">
               <label class="field-label-sm">Texto de la pregunta</label>
               <input v-model="newQuestion.text" class="input-sm" placeholder="¿Cuál es la pregunta?" required />
-            </div>
-            <div class="field-group">
-              <label class="field-label-sm">Tiempo límite (seg)</label>
-              <input v-model.number="newQuestion.time_limit_seconds" class="input-sm" type="number" min="5" max="120" />
             </div>
           </div>
 
@@ -324,6 +315,8 @@ const quizError = ref('')
 
 const questions = ref([])
 const editingQuestionId = ref(null)
+// time_limit_seconds only matters for live PIN sessions (hidden); the form no
+// longer exposes it, but the server requires it, so the 30s default is sent.
 const editQuestionForm = ref({ text: '', type: 'closed', time_limit_seconds: 30 })
 const newQuestion = ref({ text: '', type: 'closed', time_limit_seconds: 30 })
 const newOptionText = ref({})
