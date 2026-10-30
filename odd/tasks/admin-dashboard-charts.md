@@ -46,5 +46,8 @@ The dashboard is a flat list of usuarios: no overview, no way to see progress pe
 - Parent spot check: `cd client && npm test` 228 passed; `npm run build` OK (writer).
 - T3 (2026-10-30, test Supabase DB, superadmin account): KPIs, status bar, per-exam and per-punto charts render with matching numbers; exam filter (1 usuario, 1/1, prom. 6%) and usuario filter (1/1, prom. 80%) recompute; "Limpiar filtros" shows; labels associated; 375px has no horizontal scroll; no runtime console errors (only Vite HMR reload errors while files were mid-edit).
 
+- RDD: f1d92d0..d7d2b19 → medium, 622 lines, review_due (slice_budget_reached). Review granted → approved, acknowledged (lineage review-f8be2fe8184e9794). Reviewed boundary: d7d2b19.
+- Advisory (open, non-blocking): a quiz with a null title renders an empty label in "Avance por examen" (SUGGESTION, AdminDashboardView.vue:187); resetting a vanished exam selection after a punto reload has no test (WARNING, AdminDashboardView.vue:214).
+
 ## Next step
-RDD assessment, then push + PR (user decision).
+Push + PR (user decision).
