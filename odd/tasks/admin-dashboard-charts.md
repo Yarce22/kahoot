@@ -49,5 +49,7 @@ The dashboard is a flat list of usuarios: no overview, no way to see progress pe
 - RDD: f1d92d0..d7d2b19 → medium, 622 lines, review_due (slice_budget_reached). Review granted → approved, acknowledged (lineage review-f8be2fe8184e9794). Reviewed boundary: d7d2b19.
 - Advisory (open, non-blocking): a quiz with a null title renders an empty label in "Avance por examen" (SUGGESTION, AdminDashboardView.vue:187); resetting a vanished exam selection after a punto reload has no test (WARNING, AdminDashboardView.vue:214).
 
+- T4 (user request 2026-10-30): filters redesigned as a card panel ("Filtros" + active-count badge, "Limpiar filtros" link, uppercase labels, custom-chevron selects with hover/focus ring, active select tinted). "Limpiar filtros" now also resets the punto filter and refetches. Route: inline (one view + its test). RED: 2 new view tests failed; GREEN: client 230/230, build OK; browser-checked desktop + 375px (no horizontal scroll). Commit `32a98e9`. RDD: d7d2b19..32a98e9 → medium, 117 lines, under_budget (pending in next slice).
+
 ## Next step
 Push + PR (user decision).
