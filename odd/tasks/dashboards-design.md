@@ -19,7 +19,7 @@ Implement the admin and usuario dashboards exactly as designed in the Claude Des
 ## Tasks
 - [x] T1 — Admin dashboard per design. Route: inline (planned delegated; the writer subagent had no DesignSync access and transcribing the design to disk would double the cost). Commits `57a4d1a` (helpers + components), `8f74dbe` (view).
 - [x] T2 — Usuario dashboard per design. Route: inline (same reason). Commit `9321e3b`.
-- [~] T3 — Browser validation. Admin desktop: all sections render with real data, console clean. Usuario: NOT browser-checked — test credentials rejected ("Email o contraseña incorrectos."). 375px: only the login page checked (no horizontal scroll).
+- [x] T3 — Browser validation. Admin desktop: all sections render with real data, console clean. Usuario desktop + 375px: renders with real data, no horizontal scroll (scrollWidth 375). Found and fixed: relDate counted 24h blocks, showing "Hoy" for an exam submitted the previous evening; now calendar days (RED→GREEN). Admin at 375px not browser-checked.
 
 ## Progress / evidence
 - `progressDesign.test.js`: RED observed (5 failed) → GREEN.
@@ -28,4 +28,4 @@ Implement the admin and usuario dashboards exactly as designed in the Claude Des
 - Skipped: `tweaks-panel.jsx` (design-tool switcher, not product UI). Removed `StatusStackBar.vue`, `HBarChart.vue` and their test (superseded).
 
 ## Next step
-Validate the usuario dashboard and both at 375px with a working usuario test account; then RDD assessment and PR.
+Push and PR when the user asks.
