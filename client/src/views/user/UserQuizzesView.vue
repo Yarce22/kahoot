@@ -4,9 +4,14 @@
     <!-- Header -->
     <div class="quiz-list-header">
       <h1 class="nunito quiz-list-title">Mis exámenes</h1>
-      <button class="btn btn-ghost" style="font-size: 14px; padding: 8px 16px;" @click="logout">
-        Cerrar sesión
-      </button>
+      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <router-link to="/user/dashboard" class="btn btn-ghost" style="font-size: 14px; padding: 8px 16px;">
+          Mi avance
+        </router-link>
+        <button class="btn btn-ghost" style="font-size: 14px; padding: 8px 16px;" @click="logout">
+          Cerrar sesión
+        </button>
+      </div>
     </div>
 
     <p v-if="store.error" class="error-msg" role="alert">{{ store.error }}</p>

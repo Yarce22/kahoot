@@ -53,6 +53,13 @@ describe('QuizListView — nav link', () => {
     expect(link.exists()).toBe(true)
   })
 
+  it('shows the Dashboard link to the progress dashboard', async () => {
+    const wrapper = mountAs('admin')
+    await flushPromises()
+
+    expect(wrapper.find('a[href="/admin/dashboard"]').text()).toContain('Dashboard')
+  })
+
   it('shows the Usuarios link for a superadmin too', async () => {
     const wrapper = mountAs('superadmin')
     await flushPromises()

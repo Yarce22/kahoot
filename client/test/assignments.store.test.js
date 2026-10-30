@@ -53,3 +53,23 @@ describe('assignments store', () => {
     expect(res.map((x) => x.id)).toEqual(['a1', 'a2', 'a3'])
   })
 })
+
+describe('assignments store — fetchProgress', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    get.mockReset()
+  })
+
+  it('GETs /api/dashboard/progress and returns the response', async () => {
+    get.mockResolvedValue({ users: [] })
+    const res = await useAssignmentsStore().fetchProgress()
+    expect(get).toHaveBeenCalledWith('/api/dashboard/progress')
+    expect(res).toEqual({ users: [] })
+  })
+
+  it('passes punto_de_venta when filtering', async () => {
+    get.mockResolvedValue({ users: [] })
+    await useAssignmentsStore().fetchProgress({ punto_de_venta: 'Cerritos' })
+    expect(get).toHaveBeenCalledWith('/api/dashboard/progress?punto_de_venta=Cerritos')
+  })
+})
