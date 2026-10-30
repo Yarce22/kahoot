@@ -254,6 +254,14 @@ describe('AdminDashboardView', () => {
       expect(w.find('[data-testid="filter-user"]').text()).toContain('(sin nombre)')
     })
 
+    it('associates each filter label with its select', async () => {
+      const w = await ready('superadmin')
+      for (const [id, text] of [['filter-punto', 'Punto de venta'], ['filter-user', 'Usuario'], ['filter-quiz', 'Examen']]) {
+        expect(w.find('select#' + id).exists()).toBe(true)
+        expect(w.find('label[for="' + id + '"]').text()).toBe(text)
+      }
+    })
+
     it('renders the status chart and per-exam bars', async () => {
       const w = await ready()
       expect(w.text()).toContain('Estado de los exámenes')

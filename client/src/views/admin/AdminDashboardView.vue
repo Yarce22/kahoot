@@ -11,27 +11,27 @@
          superadmin can choose one. Usuario/Examen narrow the loaded data
          client-side. -->
     <div class="dash-filters">
-      <label v-if="auth.isSuperadmin" class="dash-filter">
-        Punto de venta
-        <select v-model="puntoDeVenta" data-testid="filter-punto" @change="load">
+      <div v-if="auth.isSuperadmin" class="dash-filter">
+        <label for="filter-punto">Punto de venta</label>
+        <select id="filter-punto" v-model="puntoDeVenta" data-testid="filter-punto" @change="load">
           <option value="">Todos</option>
           <option v-for="p in PUNTOS_DE_VENTA" :key="p" :value="p">{{ p }}</option>
         </select>
-      </label>
-      <label class="dash-filter">
-        Usuario
-        <select v-model="userId" data-testid="filter-user">
+      </div>
+      <div class="dash-filter">
+        <label for="filter-user">Usuario</label>
+        <select id="filter-user" v-model="userId" data-testid="filter-user">
           <option value="">Todos</option>
           <option v-for="u in userOptions" :key="u.userId" :value="u.userId">{{ u.fullName || '(sin nombre)' }}</option>
         </select>
-      </label>
-      <label class="dash-filter">
-        Examen
-        <select v-model="quizId" data-testid="filter-quiz">
+      </div>
+      <div class="dash-filter">
+        <label for="filter-quiz">Examen</label>
+        <select id="filter-quiz" v-model="quizId" data-testid="filter-quiz">
           <option value="">Todos</option>
           <option v-for="q in quizOptions" :key="q.quizId" :value="q.quizId">{{ q.quizTitle }}</option>
         </select>
-      </label>
+      </div>
       <button v-if="filtersActive" class="btn btn-ghost" style="font-size: 14px; padding: 8px 16px;" data-testid="clear-filters" @click="clearFilters">
         Limpiar filtros
       </button>
@@ -231,7 +231,9 @@ onMounted(load)
 .dash-muted { color: var(--text-secondary); font-family: 'Nunito', sans-serif; font-weight: 700; }
 .dash-empty { text-align: center; margin-top: 40px; }
 .dash-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 20px; margin-bottom: 24px; }
-.dash-filter { display: flex; flex-direction: column; gap: 4px; min-width: 160px; font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 13px; color: var(--text-secondary); }
+.dash-filter { display: flex; flex-direction: column; gap: 4px; min-width: 180px; font-family: 'Nunito', sans-serif; }
+.dash-filter label { font-weight: 700; font-size: 13px; color: var(--text-secondary); }
+.dash-filter select { width: 100%; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: var(--radius-md); background: var(--bg-card); color: var(--text-primary); font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 14px; }
 .dash-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 20px; }
 .kpi { display: flex; flex-direction: column; gap: 2px; padding: 16px 18px; font-family: 'Nunito', sans-serif; }
 .kpi-value { font-size: 28px; font-weight: 900; color: var(--text-primary); }
@@ -245,6 +247,8 @@ onMounted(load)
   .admin-dashboard-view { padding: 24px 16px 32px; }
   .dash-charts { grid-template-columns: minmax(0, 1fr); }
   .dash-filter { flex: 1 1 100%; }
+  .dash-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpi:last-child:nth-child(odd) { grid-column: 1 / -1; }
 }
 .dash-list { list-style: none; padding: 0; display: grid; gap: 12px; }
 .dash-user { padding: 16px 20px; font-family: 'Nunito', sans-serif; color: var(--text-primary); }
