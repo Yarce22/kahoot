@@ -19,7 +19,7 @@ Optional per-quiz deadline set when creating/editing an exam. After it, usuarios
 - [x] T1 — Migration 018 + schema.sql. Route: delegated writer (writer trigger: 2+ non-trivial files across server/client).
 - [x] T2 — Server: validate `due_at` (null or ISO date) on quiz POST/PUT and return it in admin selects; block start/resume after due (409 `QUIZ_PAST_DUE`), clamp new attempts' `expires_at` to `due_at` so answer/submit are covered; expose `dueAt` in `/api/user/quizzes`, `/api/user/progress`, `/api/dashboard/progress` (toProgressRow) and the admin assignments list. Route: same writer.
 - [x] T3 — Client: datetime-local "Fecha límite" in the editor (empty → null); `statusLabel` returns "Vencido" when `dueAt` passed and not completed; UserQuizzesView hides start/continue past due; UserAttemptView message for `QUIZ_PAST_DUE`. Route: same writer.
-- [ ] T4 — Browser validation against the test DB (needs migration 018 applied). Route: inline.
+- [~] T4 — Browser validation against the test DB. Route: inline. Migration 018 applied to kahoot-bianco by the orchestrator (user-authorized), column verified. Checked: editor saves due_at (18:00 local -> 23:00 UTC) and reloads it; with a past due_at, completed assignments stay Completado (dashboard Vencido 0) and the usuario keeps "Ver resultado"; due_at restored to NULL afterwards. NOT browser-checked: the past-due block on a pending/in-progress assignment (no pending assignments in the test DB; covered by server+client tests).
 
 ## Progress / evidence
 - T1 d96b453 feat(db): add quizzes.due_at. Migration 018 matches the statement the orchestrator applied to the test DB (no CHECK); schema.sql updated.
@@ -30,4 +30,4 @@ Optional per-quiz deadline set when creating/editing an exam. After it, usuarios
 - Route: delegated writer (writer trigger).
 
 ## Next step
-T4 — browser validation against the test DB (migration 018 already applied).
+Push/PR when the user asks; optional full past-due browser check by reactivating an assignment.
