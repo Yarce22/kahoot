@@ -14,7 +14,8 @@ export function toProgressRow(a) {
     attemptId: attempt?.id ?? null,
     attemptStatus: attempt?.status ?? null,
     scorePercent: attempt?.score_percent ?? null,
-    submittedAt: attempt?.submitted_at ?? null
+    submittedAt: attempt?.submitted_at ?? null,
+    dueAt: a.quiz?.due_at ?? null
   }
 }
 

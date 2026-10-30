@@ -68,7 +68,7 @@ userQuizzesRouter.get('/quizzes', async (req, res, next) => {
   // `cycle` in place), so a usuario's list only ever grows.
   const { data: assignments, error, count } = await supabase
     .from('quiz_assignments')
-    .select('id, quiz_id, cycle, status, assigned_at, quiz:quizzes(id, title, description, total_time_seconds)', { count: 'exact' })
+    .select('id, quiz_id, cycle, status, assigned_at, quiz:quizzes(id, title, description, total_time_seconds, due_at)', { count: 'exact' })
     .eq('user_id', req.user.id)
     .order('assigned_at', { ascending: false })
     // `.range` is inclusive on both ends, hence the -1.
@@ -102,6 +102,7 @@ userQuizzesRouter.get('/quizzes', async (req, res, next) => {
         title: a.quiz?.title ?? null,
         description: a.quiz?.description ?? null,
         totalTimeSeconds: a.quiz?.total_time_seconds ?? null,
+        dueAt: a.quiz?.due_at ?? null,
         status: a.status,
         cycle: a.cycle,
         assignedAt: a.assigned_at,
@@ -120,7 +121,7 @@ userQuizzesRouter.get('/quizzes', async (req, res, next) => {
 userQuizzesRouter.get('/progress', async (req, res, next) => {
   const { data, error } = await supabase
     .from('quiz_assignments')
-    .select('id, quiz_id, quiz:quizzes(title), status, cycle, attempts:quiz_attempts(id, cycle, status, score_percent, submitted_at)')
+    .select('id, quiz_id, quiz:quizzes(title, due_at), status, cycle, attempts:quiz_attempts(id, cycle, status, score_percent, submitted_at)')
     .eq('user_id', req.user.id)
     .order('assigned_at', { ascending: false })
 
@@ -187,7 +188,7 @@ userQuizzesRouter.post('/quizzes/:assignmentId/attempt', async (req, res, next) 
 
   const { data: assignment, error: assignmentError } = await supabase
     .from('quiz_assignments')
-    .select('id, quiz_id, user_id, cycle, status, quiz:quizzes(id, total_time_seconds)')
+    .select('id, quiz_id, user_id, cycle, status, quiz:quizzes(id, total_time_seconds, due_at)')
     .eq('id', assignmentId)
     .eq('user_id', req.user.id)
     .single()
@@ -203,6 +204,10 @@ userQuizzesRouter.post('/quizzes/:assignmentId/attempt', async (req, res, next) 
   if (!assignment.quiz || assignment.quiz.total_time_seconds === null) {
     return next(httpError(409, 'QUIZ_NOT_ASSIGNABLE'))
   }
+
+  // The deadline blocks both a fresh start and a resume.
+  const dueAt = assignment.quiz.due_at ? new Date(assignment.quiz.due_at) : null
+  if (dueAt && Date.now() > dueAt.getTime()) return next(httpError(409, 'QUIZ_PAST_DUE'))
 
   const { data: existingRows, error: existingError } = await supabase
     .from('quiz_attempts')
@@ -362,6 +367,9 @@ userQuizzesRouter.post('/quizzes/:assignmentId/attempt', async (req, res, next) 
   let expiresAt
   try {
     expiresAt = computeExpiry(startedAt, assignment.quiz.total_time_seconds)
+    // Clamping to due_at makes the existing answer/submit expiry gates enforce the deadline.
+    // shortcut: an in-progress attempt keeps the deadline it started with if the admin later changes due_at, fine until that needs to apply retroactively.
+    if (dueAt && dueAt < expiresAt) expiresAt = dueAt
   } catch (err) {
     return next(err)
   }

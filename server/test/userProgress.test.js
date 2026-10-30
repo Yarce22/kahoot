@@ -94,7 +94,8 @@ test('GET /api/user/progress — aggregates the caller\'s own assignments, scope
       attemptId: 'att-1',
       attemptStatus: 'completed',
       scorePercent: 90,
-      submittedAt: '2026-01-01T00:00:00Z'
+      submittedAt: '2026-01-01T00:00:00Z',
+      dueAt: null
     })
     assert.equal(res.body.quizzes[1].attemptStatus, 'in_progress')
     assert.equal(res.body.quizzes[2].title, null)

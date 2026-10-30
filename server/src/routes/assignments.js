@@ -206,7 +206,7 @@ assignmentsRouter.get('/', async (req, res, next) => {
   // lookup below — without a page bound that fan-out grew with the table.
   let query = supabase
     .from('quiz_assignments')
-    .select('id, quiz_id, quiz:quizzes(title), status, cycle, assigned_at, completed_at, user:users!inner(id, full_name, email, punto_de_venta)', { count: 'exact' })
+    .select('id, quiz_id, quiz:quizzes(title, due_at), status, cycle, assigned_at, completed_at, user:users!inner(id, full_name, email, punto_de_venta)', { count: 'exact' })
     .order('assigned_at', { ascending: false })
 
   if (req.query.quiz_id) query = query.eq('quiz_id', req.query.quiz_id)
@@ -257,6 +257,7 @@ assignmentsRouter.get('/', async (req, res, next) => {
       cycle: a.cycle,
       assignedAt: a.assigned_at,
       completedAt: a.completed_at,
+      dueAt: a.quiz?.due_at ?? null,
       attemptStatus: attemptStatusByKey[`${a.id}:${a.cycle}`] ?? null
     })),
     page,

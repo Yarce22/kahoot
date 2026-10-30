@@ -30,7 +30,7 @@ dashboardRouter.get('/progress', async (req, res, next) => {
 
   let query = supabase
     .from('quiz_assignments')
-    .select('id, quiz_id, quiz:quizzes(title), status, cycle, user:users!inner(id, full_name, email, punto_de_venta), attempts:quiz_attempts(id, cycle, status, score_percent, submitted_at)')
+    .select('id, quiz_id, quiz:quizzes(title, due_at), status, cycle, user:users!inner(id, full_name, email, punto_de_venta), attempts:quiz_attempts(id, cycle, status, score_percent, submitted_at)')
     // Ordered so a MAX_ROWS truncation is deterministic and each user's quiz
     // list comes back in assignment order.
     .order('assigned_at', { ascending: true })
