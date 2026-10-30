@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { summarize, statusCounts, byQuiz, byPunto } from '../src/lib/progress.js'
+import { summarize, statusCounts, statusLabel, byQuiz, byPunto } from '../src/lib/progress.js'
 
 const row = (o = {}) => ({
   assignmentId: 'a', quizId: 'q1', quizTitle: 'Seguridad', status: 'pending',
@@ -81,5 +81,32 @@ describe('byPunto', () => {
       { puntoDeVenta: 'Sin punto', assigned: 2, completed: 1, completionPercent: 50, averageScore: 100 },
       { puntoDeVenta: 'Laureles', assigned: 2, completed: 0, completionPercent: 0, averageScore: null }
     ])
+  })
+})
+
+describe('statusLabel — due date', () => {
+  const NOW = Date.parse('2030-06-01T00:00:00Z')
+  const PAST = '2030-05-01T00:00:00Z'
+  const FUTURE = '2030-07-01T00:00:00Z'
+
+  it('shows Vencido for a not-completed row whose dueAt has passed', () => {
+    expect(statusLabel({ status: 'pending', attemptStatus: null, dueAt: PAST }, NOW)).toBe('Vencido')
+    expect(statusLabel({ status: 'pending', attemptStatus: 'in_progress', dueAt: PAST }, NOW)).toBe('Vencido')
+  })
+
+  it('keeps Completado after the deadline', () => {
+    expect(statusLabel({ status: 'completed', attemptStatus: 'completed', dueAt: PAST }, NOW)).toBe('Completado')
+  })
+
+  it('behaves as before without dueAt or with a future dueAt', () => {
+    expect(statusLabel({ status: 'pending', attemptStatus: null }, NOW)).toBe('Pendiente')
+    expect(statusLabel({ status: 'pending', attemptStatus: 'in_progress', dueAt: null }, NOW)).toBe('En progreso')
+    expect(statusLabel({ status: 'pending', attemptStatus: null, dueAt: FUTURE }, NOW)).toBe('Pendiente')
+  })
+
+  it('counts past-due rows under Vencido', () => {
+    const counts = statusCounts([row({ dueAt: '2000-01-01T00:00:00Z' }), done(90, { dueAt: '2000-01-01T00:00:00Z' })])
+    expect(counts.Vencido).toBe(1)
+    expect(counts.Completado).toBe(1)
   })
 })

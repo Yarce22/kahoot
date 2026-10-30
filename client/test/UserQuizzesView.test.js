@@ -111,6 +111,36 @@ describe('UserQuizzesView', () => {
     expect(wrapper.find('.btn-primary').exists()).toBe(false)
   })
 
+  it('shows Vencido and no action button when dueAt has passed and the quiz is not completed', async () => {
+    get.mockResolvedValue({ quizzes: [quizRow({ dueAt: '2020-01-01T00:00:00Z' })], page: 1, page_size: 25, total: 1 })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.badge-orange').text()).toBe('Vencido')
+    expect(wrapper.find('.btn-primary').exists()).toBe(false)
+  })
+
+  it('keeps "Ver resultado" for a completed quiz even past its dueAt', async () => {
+    get.mockResolvedValue({
+      quizzes: [quizRow({ dueAt: '2020-01-01T00:00:00Z', status: 'completed', attempt: { id: 'att1', status: 'completed', startedAt: 't0', expiresAt: 't1', submittedAt: 't2', correctCount: 3, totalQuestions: 4, scorePercent: 75 } })],
+      page: 1, page_size: 25, total: 1
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.btn-primary').text()).toBe('Ver resultado')
+    expect(wrapper.find('.badge-orange').exists()).toBe(false)
+  })
+
+  it('shows the deadline and the start button when dueAt is in the future', async () => {
+    get.mockResolvedValue({ quizzes: [quizRow({ dueAt: '2099-01-01T12:00:00Z' })], page: 1, page_size: 25, total: 1 })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Vence el')
+    expect(wrapper.find('.btn-primary').text()).toBe('Comenzar')
+  })
+
   it('renders pagination controls driven by store.page/total/pageSize', async () => {
     get.mockResolvedValue({ quizzes: [quizRow()], page: 1, page_size: 1, total: 3 })
     const wrapper = mountView()

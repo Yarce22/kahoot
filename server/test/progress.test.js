@@ -28,8 +28,13 @@ test('toProgressRow — picks only the current-cycle attempt', () => {
     attemptId: 'att-2',
     attemptStatus: 'completed',
     scorePercent: 90,
-    submittedAt: 't2'
+    submittedAt: 't2',
+    dueAt: null
   })
+})
+
+test('toProgressRow — carries the embedded quiz due_at as dueAt', () => {
+  assert.equal(toProgressRow(assignment({ quiz: { due_at: '2030-01-01T00:00:00Z' } })).dueAt, '2030-01-01T00:00:00Z')
 })
 
 test('toProgressRow — no current-cycle attempt yields nulls', () => {

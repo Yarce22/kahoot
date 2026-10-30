@@ -15,17 +15,24 @@ function isValidTotalTimeSeconds(value) {
 }
 const TOTAL_TIME_SECONDS_ERROR = 'total_time_seconds must be null or an integer between 60 and 7200'
 
+// isValidDueAt — null (the quiz never expires) or a parseable date string.
+function isValidDueAt(value) {
+  return value === null || (typeof value === 'string' && !Number.isNaN(Date.parse(value)))
+}
+const DUE_AT_ERROR = 'due_at must be null or an ISO date string'
+
 // POST /api/quizzes — create quiz.
 // Ownership (owner_id) is mandatory after migration 002:
 //   - AUTH_MODE=jwt: owner_id = req.admin.id (the authenticated admin)
 //   - AUTH_MODE=legacy: owner_id = the bootstrap admin (single lookup),
 //     since legacy requests carry no JWT identity.
 quizzesRouter.post('/', requireAdmin, authGate, async (req, res, next) => {
-  const { title, description, total_time_seconds = null } = req.body
+  const { title, description, total_time_seconds = null, due_at = null } = req.body
 
   if (!title) return next(httpError(400, 'title is required'))
   if (title.length > 200) return next(httpError(400, 'title must be 200 characters or fewer'))
   if (!isValidTotalTimeSeconds(total_time_seconds)) return next(httpError(400, TOTAL_TIME_SECONDS_ERROR))
+  if (!isValidDueAt(due_at)) return next(httpError(400, DUE_AT_ERROR))
 
   let ownerId
   try {
@@ -36,7 +43,7 @@ quizzesRouter.post('/', requireAdmin, authGate, async (req, res, next) => {
 
   const { data, error } = await supabase
     .from('quizzes')
-    .insert({ title, description: description ?? null, owner_id: ownerId, total_time_seconds })
+    .insert({ title, description: description ?? null, owner_id: ownerId, total_time_seconds, due_at })
     .select('id')
     .single()
 
@@ -52,7 +59,7 @@ quizzesRouter.post('/', requireAdmin, authGate, async (req, res, next) => {
 quizzesRouter.get('/', requireAdmin, authGate, async (req, res, next) => {
   let query = supabase
     .from('quizzes')
-    .select('id, title, description, created_at, total_time_seconds, questions(count), owner:admins(id, email)')
+    .select('id, title, description, created_at, total_time_seconds, due_at, questions(count), owner:admins(id, email)')
     .order('created_at', { ascending: false })
 
   // A superadmin lists every admin's quizzes; a plain admin only its own.
@@ -84,7 +91,7 @@ quizzesRouter.get('/:id', requireAdmin, authGate, ownerGate(), async (req, res, 
 
   const { data: quiz, error: quizError } = await supabase
     .from('quizzes')
-    .select('id, title, description, total_time_seconds')
+    .select('id, title, description, total_time_seconds, due_at')
     .eq('id', id)
     .single()
 
@@ -158,7 +165,7 @@ quizzesRouter.get('/:id/sessions', requireAdmin, authGate, ownerGate(), async (r
 // PUT /api/quizzes/:id — update quiz
 quizzesRouter.put('/:id', requireAdmin, authGate, ownerGate(), async (req, res, next) => {
   const { id } = req.params
-  const { title, description, total_time_seconds } = req.body
+  const { title, description, total_time_seconds, due_at } = req.body
 
   const updates = {}
   if (title !== undefined) {
@@ -170,12 +177,16 @@ quizzesRouter.put('/:id', requireAdmin, authGate, ownerGate(), async (req, res, 
     if (!isValidTotalTimeSeconds(total_time_seconds)) return next(httpError(400, TOTAL_TIME_SECONDS_ERROR))
     updates.total_time_seconds = total_time_seconds
   }
+  if (due_at !== undefined) {
+    if (!isValidDueAt(due_at)) return next(httpError(400, DUE_AT_ERROR))
+    updates.due_at = due_at
+  }
 
   const { data, error } = await supabase
     .from('quizzes')
     .update(updates)
     .eq('id', id)
-    .select('id, title, description, total_time_seconds, created_at')
+    .select('id, title, description, total_time_seconds, due_at, created_at')
     .single()
 
   if (error || !data) return next(httpError(404, 'Quiz not found'))

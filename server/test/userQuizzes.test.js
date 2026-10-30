@@ -78,6 +78,7 @@ test('GET /api/user/quizzes — returns only the caller\'s own assignments', asy
       title: 'Quiz 1',
       description: 'desc',
       totalTimeSeconds: 600,
+      dueAt: null,
       status: 'pending',
       cycle: 1,
       assignedAt: '2026-01-01T00:00:00.000Z',

@@ -232,3 +232,49 @@ describe('QuizEditorView — editing a true_false question', () => {
     })
   }
 })
+
+describe('QuizEditorView — due_at (datetime-local)', () => {
+  beforeEach(() => {
+    delete routeParams.id
+    get.mockReset()
+    put.mockReset()
+    post.mockReset()
+  })
+
+  it('loads due_at as local YYYY-MM-DDTHH:mm, empty when the quiz never expires', async () => {
+    routeParams.id = 'q1'
+    get.mockResolvedValue({ id: 'q1', title: 'E', description: '', total_time_seconds: 900, due_at: new Date(2030, 5, 1, 14, 30).toISOString(), questions: [] })
+    let wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.find('#quiz-due-at').element.value).toBe('2030-06-01T14:30')
+
+    get.mockResolvedValue({ id: 'q1', title: 'E', description: '', total_time_seconds: 900, due_at: null, questions: [] })
+    wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.find('#quiz-due-at').element.value).toBe('')
+  })
+
+  it('sends due_at as an ISO string when filled and null when emptied', async () => {
+    routeParams.id = 'q1'
+    get.mockResolvedValue({ id: 'q1', title: 'E', description: '', total_time_seconds: 900, due_at: null, questions: [] })
+    put.mockResolvedValue({ id: 'q1', title: 'E', description: '' })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.find('#quiz-due-at').setValue('2030-06-01T14:30')
+    await saveMeta(wrapper)
+    expect(put.mock.calls[0][1].due_at).toBe(new Date('2030-06-01T14:30').toISOString())
+
+    await wrapper.find('#quiz-due-at').setValue('')
+    await saveMeta(wrapper)
+    expect(put.mock.calls[1][1].due_at).toBeNull()
+  })
+
+  it('creates a quiz with due_at null by default', async () => {
+    post.mockResolvedValue({ quizId: 'q1' })
+    const wrapper = mountView()
+    await wrapper.find('#quiz-title').setValue('Nuevo')
+    await saveMeta(wrapper)
+    expect(post.mock.calls[0][1].due_at).toBeNull()
+  })
+})

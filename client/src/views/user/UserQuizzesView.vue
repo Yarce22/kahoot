@@ -31,7 +31,11 @@
 
         <!-- 'expired': the cycle is over — only an admin reactivation creates
              a new attempt, so no action button, just a status badge. -->
-        <span v-if="q.attempt && q.attempt.status === 'expired'" class="badge badge-orange">
+        <p v-if="q.dueAt && !isPastDue(q) && !isCompleted(q)" class="quiz-card-meta">
+          Vence el {{ formatDue(q.dueAt) }}
+        </p>
+
+        <span v-if="(q.attempt && q.attempt.status === 'expired') || isPastDue(q)" class="badge badge-orange">
           Vencido
         </span>
         <button v-else class="btn btn-primary" @click="go(q)">
@@ -89,6 +93,12 @@ function actionLabel(q) {
   if (q.attempt.status === 'completed') return 'Ver resultado'
   return 'Comenzar'
 }
+
+// A past-due quiz that was not completed is closed; completed ones keep their
+// result link (the server enforces the deadline, this only mirrors it).
+const isCompleted = (q) => q.attempt?.status === 'completed'
+const isPastDue = (q) => Boolean(q.dueAt) && Date.now() > Date.parse(q.dueAt) && !isCompleted(q)
+const formatDue = (iso) => new Date(iso).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' })
 
 function go(q) {
   if (q.attempt && q.attempt.status === 'completed') {

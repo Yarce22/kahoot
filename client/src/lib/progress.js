@@ -2,9 +2,11 @@
 
 // statusLabel — the current-cycle state of one assignment. An attempt in a
 // non-final state (expired / in progress) is more informative than the
-// assignment's own "pending".
-export function statusLabel({ status, attemptStatus }) {
+// assignment's own "pending". A quiz past its dueAt that was not completed is
+// Vencido regardless of attempt state; completed work keeps "Completado".
+export function statusLabel({ status, attemptStatus, dueAt }, now = Date.now()) {
   if (status === 'completed') return 'Completado'
+  if (dueAt && now > Date.parse(dueAt)) return 'Vencido'
   if (attemptStatus === 'expired') return 'Vencido'
   if (attemptStatus === 'in_progress') return 'En progreso'
   return 'Pendiente'

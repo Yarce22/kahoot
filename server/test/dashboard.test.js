@@ -125,7 +125,8 @@ test('GET /api/dashboard/progress — aggregates per usuario, sorted by name, cu
       attemptId: 'att-2',
       attemptStatus: 'expired',
       scorePercent: 0,
-      submittedAt: null
+      submittedAt: null,
+      dueAt: null
     })
   } finally {
     restore()
