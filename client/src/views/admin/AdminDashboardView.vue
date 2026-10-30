@@ -10,32 +10,40 @@
     <!-- Plain admins are pinned to their own store server-side; only a
          superadmin can choose one. Usuario/Examen narrow the loaded data
          client-side. -->
-    <div class="dash-filters">
-      <div v-if="auth.isSuperadmin" class="dash-filter">
-        <label for="filter-punto">Punto de venta</label>
-        <select id="filter-punto" v-model="puntoDeVenta" data-testid="filter-punto" @change="load">
-          <option value="">Todos</option>
-          <option v-for="p in PUNTOS_DE_VENTA" :key="p" :value="p">{{ p }}</option>
-        </select>
+    <section class="card dash-filters" aria-labelledby="filters-title">
+      <div class="dash-filters-head">
+        <h2 id="filters-title" class="dash-filters-title">
+          Filtros
+          <span v-if="activeCount" class="dash-filters-count" data-testid="filter-count">{{ activeCount }}</span>
+        </h2>
+        <button v-if="activeCount" type="button" class="dash-clear" data-testid="clear-filters" @click="clearFilters">
+          Limpiar filtros
+        </button>
       </div>
-      <div class="dash-filter">
-        <label for="filter-user">Usuario</label>
-        <select id="filter-user" v-model="userId" data-testid="filter-user">
-          <option value="">Todos</option>
-          <option v-for="u in userOptions" :key="u.userId" :value="u.userId">{{ u.fullName || '(sin nombre)' }}</option>
-        </select>
+      <div class="dash-filters-grid">
+        <div v-if="auth.isSuperadmin" class="dash-filter">
+          <label for="filter-punto">Punto de venta</label>
+          <select id="filter-punto" v-model="puntoDeVenta" :class="{ 'is-active': puntoDeVenta }" data-testid="filter-punto" @change="load">
+            <option value="">Todos</option>
+            <option v-for="p in PUNTOS_DE_VENTA" :key="p" :value="p">{{ p }}</option>
+          </select>
+        </div>
+        <div class="dash-filter">
+          <label for="filter-user">Usuario</label>
+          <select id="filter-user" v-model="userId" :class="{ 'is-active': userId }" data-testid="filter-user">
+            <option value="">Todos</option>
+            <option v-for="u in userOptions" :key="u.userId" :value="u.userId">{{ u.fullName || '(sin nombre)' }}</option>
+          </select>
+        </div>
+        <div class="dash-filter">
+          <label for="filter-quiz">Examen</label>
+          <select id="filter-quiz" v-model="quizId" :class="{ 'is-active': quizId }" data-testid="filter-quiz">
+            <option value="">Todos</option>
+            <option v-for="q in quizOptions" :key="q.quizId" :value="q.quizId">{{ q.quizTitle }}</option>
+          </select>
+        </div>
       </div>
-      <div class="dash-filter">
-        <label for="filter-quiz">Examen</label>
-        <select id="filter-quiz" v-model="quizId" data-testid="filter-quiz">
-          <option value="">Todos</option>
-          <option v-for="q in quizOptions" :key="q.quizId" :value="q.quizId">{{ q.quizTitle }}</option>
-        </select>
-      </div>
-      <button v-if="filtersActive" class="btn btn-ghost" style="font-size: 14px; padding: 8px 16px;" data-testid="clear-filters" @click="clearFilters">
-        Limpiar filtros
-      </button>
-    </div>
+    </section>
 
     <p v-if="error" class="error-msg" role="alert">{{ error }}</p>
 
@@ -140,10 +148,16 @@ const open = ref(new Set())
 const userId = ref('')
 const quizId = ref('')
 
-const filtersActive = computed(() => !!(userId.value || quizId.value))
+const activeCount = computed(() => [puntoDeVenta.value, userId.value, quizId.value].filter(Boolean).length)
+const filtersActive = computed(() => activeCount.value > 0)
 function clearFilters() {
   userId.value = ''
   quizId.value = ''
+  // Punto is a server-side filter: clearing it needs a refetch.
+  if (puntoDeVenta.value) {
+    puntoDeVenta.value = ''
+    load()
+  }
 }
 
 const userOptions = computed(() =>
@@ -230,10 +244,27 @@ onMounted(load)
 .dash-title { font-weight: 900; font-size: 28px; color: var(--text-primary); }
 .dash-muted { color: var(--text-secondary); font-family: 'Nunito', sans-serif; font-weight: 700; }
 .dash-empty { text-align: center; margin-top: 40px; }
-.dash-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 20px; margin-bottom: 24px; }
-.dash-filter { display: flex; flex-direction: column; gap: 4px; min-width: 180px; font-family: 'Nunito', sans-serif; }
-.dash-filter label { font-weight: 700; font-size: 13px; color: var(--text-secondary); }
-.dash-filter select { width: 100%; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: var(--radius-md); background: var(--bg-card); color: var(--text-primary); font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 14px; }
+.dash-filters { padding: 16px 20px 18px; margin-bottom: 20px; font-family: 'Nunito', sans-serif; }
+.dash-filters-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 28px; margin-bottom: 12px; }
+.dash-filters-title { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; font-weight: 800; color: var(--text-primary); }
+.dash-filters-count { min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px; background: var(--salvia-700); color: #fff; font-size: 12px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+.dash-clear { border: none; background: none; padding: 4px 6px; border-radius: var(--radius-md); color: var(--terracota-700); font-family: inherit; font-size: 14px; font-weight: 800; cursor: pointer; }
+.dash-clear:hover { text-decoration: underline; }
+.dash-clear:focus-visible { outline: 2px solid var(--terracota-700); outline-offset: 2px; }
+.dash-filters-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 16px; }
+.dash-filter { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.dash-filter label { font-weight: 800; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--text-secondary); }
+/* Native select with the arrow redrawn, so it matches the card palette. */
+.dash-filter select {
+  appearance: none; width: 100%; padding: 10px 38px 10px 14px; cursor: pointer;
+  border: 1.5px solid var(--neutral-300); border-radius: var(--radius-md);
+  background: var(--neutral-100) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%2356633f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 14px center;
+  color: var(--text-primary); font-family: inherit; font-weight: 700; font-size: 14px; text-overflow: ellipsis;
+  transition: border-color .15s, box-shadow .15s, background-color .15s;
+}
+.dash-filter select:hover { border-color: var(--salvia-500); }
+.dash-filter select:focus-visible { outline: none; border-color: var(--salvia-700); box-shadow: 0 0 0 3px var(--salvia-200); }
+.dash-filter select.is-active { border-color: var(--salvia-700); background-color: var(--salvia-100); }
 .dash-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 20px; }
 .kpi { display: flex; flex-direction: column; gap: 2px; padding: 16px 18px; font-family: 'Nunito', sans-serif; }
 .kpi-value { font-size: 28px; font-weight: 900; color: var(--text-primary); }
@@ -246,7 +277,7 @@ onMounted(load)
 @media (max-width: 720px) {
   .admin-dashboard-view { padding: 24px 16px 32px; }
   .dash-charts { grid-template-columns: minmax(0, 1fr); }
-  .dash-filter { flex: 1 1 100%; }
+  .dash-filters-grid { grid-template-columns: minmax(0, 1fr); }
   .dash-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .kpi:last-child:nth-child(odd) { grid-column: 1 / -1; }
 }

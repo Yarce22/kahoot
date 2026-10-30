@@ -238,6 +238,27 @@ describe('AdminDashboardView', () => {
       expect(w.find('[data-testid="total-users"]').text()).toBe('1')
     })
 
+    it('counts active filters and marks the active selects', async () => {
+      const w = await ready()
+      expect(w.find('[data-testid="filter-count"]').exists()).toBe(false)
+      await w.find('[data-testid="filter-user"]').setValue('u2')
+      await w.find('[data-testid="filter-quiz"]').setValue('q2')
+      expect(w.find('[data-testid="filter-count"]').text()).toBe('2')
+      expect(w.find('[data-testid="filter-user"]').classes()).toContain('is-active')
+    })
+
+    it('clears the punto filter too and refetches every store', async () => {
+      const w = await ready('superadmin')
+      await w.find('[data-testid="filter-punto"]').setValue('Laureles')
+      await flushPromises()
+      expect(w.find('[data-testid="filter-count"]').text()).toBe('1')
+      await w.find('[data-testid="clear-filters"]').trigger('click')
+      await flushPromises()
+      expect(w.find('[data-testid="filter-punto"]').element.value).toBe('')
+      expect(get).toHaveBeenLastCalledWith('/api/dashboard/progress')
+      expect(w.find('[data-testid="clear-filters"]').exists()).toBe(false)
+    })
+
     it('renders the punto chart only with more than one punto', async () => {
       const w = await ready()
       expect(w.text()).toContain('Avance por punto de venta')
