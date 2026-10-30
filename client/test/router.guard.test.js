@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import router from '../src/router/index.js'
 import { useAuthStore } from '../src/stores/auth.js'
+import { useUserAuthStore } from '../src/stores/userAuth.js'
 
 describe('admin route guard', () => {
   beforeEach(() => {
@@ -80,5 +81,38 @@ describe('usuario password recovery routes', () => {
     await router.isReady()
     expect(router.currentRoute.value.path).toBe(path)
     expect(router.currentRoute.value.matched).toHaveLength(1)
+  })
+})
+
+describe('progress dashboard routes', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    setActivePinia(createPinia())
+  })
+
+  it('guards /admin/dashboard when logged out', async () => {
+    await router.push('/admin/dashboard')
+    await router.isReady()
+    expect(router.currentRoute.value.path).toBe('/admin/login')
+  })
+
+  it('allows /admin/dashboard for a logged-in admin', async () => {
+    useAuthStore().login('jwt', { id: 'a1', email: 'a@x.com', role: 'admin' })
+    await router.push('/admin/dashboard')
+    await router.isReady()
+    expect(router.currentRoute.value.path).toBe('/admin/dashboard')
+  })
+
+  it('guards /user/dashboard when logged out', async () => {
+    await router.push('/user/dashboard')
+    await router.isReady()
+    expect(router.currentRoute.value.path).toBe('/')
+  })
+
+  it('allows /user/dashboard for a logged-in usuario', async () => {
+    useUserAuthStore().login('jwt', { id: 'u1', email: 'u@x.com' })
+    await router.push('/user/dashboard')
+    await router.isReady()
+    expect(router.currentRoute.value.path).toBe('/user/dashboard')
   })
 })

@@ -58,6 +58,11 @@ export const useUserQuizzesStore = defineStore('userQuizzes', {
       const api = useUserApi()
       return api.post(`/api/user/attempts/${attemptId}/submit`)
     },
+    // fetchProgress — GET /api/user/progress, this usuario's own totals.
+    async fetchProgress() {
+      const api = useUserApi()
+      return api.get('/api/user/progress')
+    },
     // fetchResult — GET /api/user/attempts/:attemptId/result.
     async fetchResult(attemptId) {
       const api = useUserApi()

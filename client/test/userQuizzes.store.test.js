@@ -81,3 +81,14 @@ describe('userQuizzes store', () => {
     expect(res).toBe(response)
   })
 })
+
+describe('userQuizzes store — fetchProgress', () => {
+  it('GETs /api/user/progress and returns the response', async () => {
+    setActivePinia(createPinia())
+    get.mockReset()
+    get.mockResolvedValue({ assigned: 1, completed: 0, completionPercent: 0, averageScore: null, quizzes: [] })
+    const res = await useUserQuizzesStore().fetchProgress()
+    expect(get).toHaveBeenCalledWith('/api/user/progress')
+    expect(res.assigned).toBe(1)
+  })
+})

@@ -17,6 +17,7 @@ import { userQuizzesRouter } from './routes/userQuizzes.js'
 import { usersRouter } from './routes/users.js'
 import { assignmentsRouter } from './routes/assignments.js'
 import { attemptsRouter } from './routes/attempts.js'
+import { dashboardRouter } from './routes/dashboard.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import { resolveBootstrapAdminOwnerId } from './lib/bootstrapAdmin.js'
 import { getClientOrigin } from './lib/clientOrigin.js'
@@ -102,6 +103,7 @@ app.use('/api/user', userQuizzesRouter)
 app.use('/api/users', usersRouter)
 app.use('/api/assignments', assignmentsRouter)
 app.use('/api/attempts', attemptsRouter)
+app.use('/api/dashboard', dashboardRouter)
 
 registerSocketHandlers(io)
 

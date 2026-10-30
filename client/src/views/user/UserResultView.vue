@@ -36,7 +36,10 @@
             <span style="font-size: 16px; flex-shrink: 0;">{{ ans.isCorrect ? '✅' : ans.isCorrect === false ? '❌' : '—' }}</span>
             <div style="flex: 1;">
               <p class="answer-question">{{ ans.questionText }}</p>
-              <p class="answer-text">{{ ans.answerText || '(sin respuesta)' }}</p>
+              <!-- Single-choice/true-false rows store no answer_text, so the
+                   placeholder is hidden for known non-open types only; an
+                   unknown (null) type keeps it. -->
+              <p v-if="ans.answerText || !ans.questionType || ans.questionType === 'open'" class="answer-text">{{ ans.answerText || '(sin respuesta)' }}</p>
             </div>
           </div>
         </div>

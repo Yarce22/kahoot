@@ -5,6 +5,7 @@ import { requireUserAuth } from '../middleware/requireUserAuth.js'
 import { httpError } from '../lib/httpError.js'
 import { isUniqueViolation, isNoRowsReturned } from '../lib/pgErrors.js'
 import { SAFE_QUESTION_SELECT, serializeQuestionForUser } from '../lib/userSerializer.js'
+import { toProgressRow, summarizeProgress } from '../domain/progress.js'
 import { gradeAnswer, computeExpiry, gradeAttempt, resolveAttemptStatus } from '../domain/attemptEngine.js'
 
 export const userQuizzesRouter = Router()
@@ -113,6 +114,23 @@ userQuizzesRouter.get('/quizzes', async (req, res, next) => {
   })
 })
 
+// GET /api/user/progress — the caller's own completion summary. Attempts are
+// embedded through the quiz_attempts.assignment_id FK (one query, no `.in()`
+// fan-out) and only status/score fields are selected, never answer data.
+userQuizzesRouter.get('/progress', async (req, res, next) => {
+  const { data, error } = await supabase
+    .from('quiz_assignments')
+    .select('id, quiz_id, quiz:quizzes(title), status, cycle, attempts:quiz_attempts(id, cycle, status, score_percent, submitted_at)')
+    .eq('user_id', req.user.id)
+    .order('assigned_at', { ascending: false })
+
+  if (error) return next(error)
+
+  const quizzes = (data ?? []).map((a) => ({ ...toProgressRow(a), title: a.quiz?.title ?? null }))
+
+  res.json({ ...summarizeProgress(quizzes), quizzes })
+})
+
 // buildQuestionsPayload — the questions array shared by both the 201 (new)
 // and 200 (resume) branches below. Always goes through
 // serializeQuestionForUser, which is what emits `options: []` for an open
@@ -138,7 +156,7 @@ async function fetchSerializedQuestions(quizId) {
 async function fetchGradingInputs(quizId, attemptId) {
   const { data: questions, error: questionsError } = await supabase
     .from('questions')
-    .select('id, text')
+    .select('id, text, type')
     .eq('quiz_id', quizId)
 
   if (questionsError) throw questionsError
@@ -535,10 +553,11 @@ userQuizzesRouter.post('/attempts/:id/answers', async (req, res, next) => {
 // an option-level `is_correct` — the one deliberate exception userSerializer
 // (design D5) documents as legitimate for a usuario's own result.
 function buildAnswersDetail(questions, answers) {
-  const textByQuestionId = Object.fromEntries((questions ?? []).map((q) => [q.id, q.text]))
+  const byId = Object.fromEntries((questions ?? []).map((q) => [q.id, q]))
   return (answers ?? []).map((a) => ({
     questionId: a.question_id,
-    questionText: textByQuestionId[a.question_id] ?? null,
+    questionText: byId[a.question_id]?.text ?? null,
+    questionType: byId[a.question_id]?.type ?? null,
     answerText: a.answer_text,
     isCorrect: a.is_correct
   }))
@@ -672,7 +691,7 @@ userQuizzesRouter.get('/attempts/:id/result', async (req, res, next) => {
 
   const { data: questions, error: questionsError } = await supabase
     .from('questions')
-    .select('id, text')
+    .select('id, text, type')
     .eq('quiz_id', attempt.quiz_id)
 
   if (questionsError) return next(questionsError)
