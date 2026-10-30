@@ -42,7 +42,9 @@ function makeQueryBuilder(result, calls = [], table) {
     // `{ data, count }` for the window it represents and the test asserts the
     // window that was actually requested.
     range: record('range'),
-    order: () => builder,
+    // `order` is recorded: it is the only observable proof that a capped
+    // (`limit`) read truncates deterministically.
+    order: record('order'),
     limit: () => builder,
     insert: record('insert'),
     // `upsert` is recorded with ALL its arguments, options bag included: the
