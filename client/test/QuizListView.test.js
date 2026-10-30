@@ -53,6 +53,16 @@ describe('QuizListView — nav link', () => {
     expect(link.exists()).toBe(true)
   })
 
+  it('does not offer to start a live PIN session from a quiz card', async () => {
+    get.mockResolvedValue([ASSIGNABLE_QUIZ])
+    const wrapper = mountAs('admin')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Trivia')
+    expect(wrapper.text()).not.toContain('Iniciar')
+    expect(wrapper.find('.btn-host').exists()).toBe(false)
+  })
+
   it('shows the Dashboard link to the progress dashboard', async () => {
     const wrapper = mountAs('admin')
     await flushPromises()

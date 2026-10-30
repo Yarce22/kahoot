@@ -71,6 +71,48 @@ describe('QuizEditorView — create then update', () => {
   })
 })
 
+describe('QuizEditorView — live sessions hidden', () => {
+  beforeEach(() => {
+    get.mockReset()
+  })
+
+  it('does not offer to create a live PIN session when editing a quiz', async () => {
+    routeParams.id = 'q1'
+    get.mockResolvedValue({ id: 'q1', title: 'Existing', description: '', total_time_seconds: 900, questions: [] })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('#quiz-title').element.value).toBe('Existing')
+    expect(wrapper.text()).not.toContain('Crear Sesión')
+    expect(wrapper.find('.session-launcher-panel').exists()).toBe(false)
+  })
+
+  it('hides the per-question time limit but still sends the 30s default', async () => {
+    routeParams.id = 'q1'
+    get.mockResolvedValue({
+      id: 'q1', title: 'Existing', description: '', total_time_seconds: 900,
+      questions: [{ id: 'qq1', text: 'Pregunta', type: 'open', time_limit_seconds: 45, options: [] }]
+    })
+    post.mockReset().mockResolvedValue({ id: 'qq2' })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Pregunta')
+    expect(wrapper.text()).not.toContain('45s')
+    expect(wrapper.text()).not.toMatch(/(Límite de tiempo|Tiempo límite) \(seg\)/)
+    expect(wrapper.find('input[min="5"]').exists()).toBe(false)
+
+    await wrapper.findAll('button').find((b) => b.text() === 'Respuesta abierta').trigger('click')
+    await wrapper.find('input[placeholder="¿Cuál es la pregunta?"]').setValue('Nueva')
+    await wrapper.find('input[placeholder="¿Cuál es la pregunta?"]').element.form.dispatchEvent(new Event('submit'))
+    await flushPromises()
+
+    expect(post).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ text: 'Nueva', time_limit_seconds: 30 }))
+  })
+})
+
 describe('QuizEditorView — total_time_seconds (edited in minutes)', () => {
   beforeEach(() => {
     delete routeParams.id

@@ -25,7 +25,6 @@
 
     <!-- Error -->
     <p v-if="store.error" class="error-msg">{{ store.error }}</p>
-    <p v-if="startError" class="error-msg" role="alert">{{ startError }}</p>
 
     <!-- Quiz grid -->
     <div v-if="store.quizzes.length" class="quiz-grid">
@@ -51,9 +50,6 @@
 
         <!-- Actions -->
         <div class="quiz-card-actions">
-          <button class="btn-icon btn-host" @click="start(quiz)" :disabled="startingId === quiz.id">
-            {{ startingId === quiz.id ? 'Iniciando…' : '▶ Iniciar' }}
-          </button>
           <button class="btn-icon btn-edit" @click="router.push(`/admin/quizzes/${quiz.id}`)">
             ✏ Editar
           </button>
@@ -221,8 +217,6 @@ const auth = useAuthStore()
 const usersStore = useUsersStore()
 const assignmentsStore = useAssignmentsStore()
 
-const startingId = ref(null)
-const startError = ref('')
 
 const reactivatingQuiz = ref(null)
 const quizAssignments = ref([])
@@ -245,22 +239,6 @@ const assignError = ref('')
 const assigning = ref(false)
 
 onMounted(() => store.fetchQuizzes())
-
-// start — create a live session for the quiz and go straight to the host
-// panel (the lobby where players join by PIN), instead of the editor.
-async function start(quiz) {
-  if (startingId.value) return
-  startingId.value = quiz.id
-  startError.value = ''
-  try {
-    const { pin } = await store.createSession(quiz.id)
-    router.push(`/admin/sessions/${pin}`)
-  } catch (e) {
-    startError.value = `No se pudo iniciar "${quiz.title}": ${e.message}`
-  } finally {
-    startingId.value = null
-  }
-}
 
 async function remove(id) {
   if (!confirm('¿Eliminar este cuestionario?')) return
@@ -480,7 +458,6 @@ function thumbEmoji(idx)    { return EMOJIS[idx % EMOJIS.length] }
 }
 .btn-icon:hover { filter: brightness(1.15); transform: translateY(-1px); }
 
-.btn-host   { background: rgba(198, 113, 57, 0.2); color: var(--accent-purple); border: 1px solid rgba(198, 113, 57, 0.3); }
 .btn-edit   { background: rgba(86, 99, 63, 0.15);  color: var(--accent-cyan);   border: 1px solid rgba(86, 99, 63, 0.25); }
 .btn-history{ background: rgba(214, 127, 72, 0.15);  color: var(--accent-yellow); border: 1px solid rgba(214, 127, 72, 0.25); }
 .btn-assign { background: rgba(122, 138, 94, 0.15);  color: var(--accent-green);  border: 1px solid rgba(122, 138, 94, 0.25); }

@@ -55,11 +55,7 @@
       <router-link to="/user/forgot-password" class="auth-alt-link">¿Olvidaste tu contraseña?</router-link>
     </div>
 
-    <!-- Alternate entry points -->
-    <p class="home-footer-link">
-      ¿Querés unirte a un juego con PIN?
-      <router-link to="/join" class="home-admin-link">Entrá acá</router-link>
-    </p>
+    <!-- Alternate entry point (the live PIN join link is hidden for now) -->
     <p class="home-footer-link">
       ¿Sos el host?
       <router-link to="/admin/login" class="home-admin-link">Accedé al panel de administración</router-link>
