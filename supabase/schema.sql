@@ -39,6 +39,7 @@ CREATE TABLE quizzes (
   description TEXT,
   owner_id UUID NOT NULL REFERENCES admins(id),
   total_time_seconds INT CHECK (total_time_seconds IS NULL OR total_time_seconds BETWEEN 60 AND 7200),
+  due_at TIMESTAMPTZ,
   assignment_cycle INT NOT NULL DEFAULT 1,
   created_at TIMESTAMPTZ DEFAULT now()
 );
