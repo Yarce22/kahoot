@@ -245,6 +245,15 @@ describe('AdminDashboardView', () => {
       expect(w.text()).not.toContain('Avance por punto de venta')
     })
 
+    it('renders usuarios without a name and quizzes without a title', async () => {
+      const w = await ready('admin', { users: [
+        withRows('u1', null, 'Cerritos', [done('a1', 'q1', null, 80)]),
+        withRows('u2', 'Beto', 'Cerritos', [done('b1', 'q2', 'Higiene', 60)])
+      ] })
+      expect(w.find('[data-testid="total-users"]').text()).toBe('2')
+      expect(w.find('[data-testid="filter-user"]').text()).toContain('(sin nombre)')
+    })
+
     it('renders the status chart and per-exam bars', async () => {
       const w = await ready()
       expect(w.text()).toContain('Estado de los exámenes')

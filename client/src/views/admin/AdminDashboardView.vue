@@ -22,7 +22,7 @@
         Usuario
         <select v-model="userId" data-testid="filter-user">
           <option value="">Todos</option>
-          <option v-for="u in userOptions" :key="u.userId" :value="u.userId">{{ u.fullName }}</option>
+          <option v-for="u in userOptions" :key="u.userId" :value="u.userId">{{ u.fullName || '(sin nombre)' }}</option>
         </select>
       </label>
       <label class="dash-filter">
@@ -147,12 +147,12 @@ function clearFilters() {
 }
 
 const userOptions = computed(() =>
-  [...(users.value ?? [])].sort((a, b) => a.fullName.localeCompare(b.fullName))
+  [...(users.value ?? [])].sort((a, b) => (a.fullName ?? '').localeCompare(b.fullName ?? ''))
 )
 const quizOptions = computed(() => {
   const map = new Map()
   for (const u of users.value ?? []) for (const q of u.quizzes) map.set(q.quizId, q.quizTitle)
-  return [...map].map(([id, quizTitle]) => ({ quizId: id, quizTitle })).sort((a, b) => a.quizTitle.localeCompare(b.quizTitle))
+  return [...map].map(([id, quizTitle]) => ({ quizId: id, quizTitle })).sort((a, b) => (a.quizTitle ?? '').localeCompare(b.quizTitle ?? ''))
 })
 
 // Usuario narrows the list; Examen narrows each usuario's quizzes and

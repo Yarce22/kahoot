@@ -57,6 +57,13 @@ describe('byQuiz', () => {
   })
 })
 
+describe('byQuiz with missing titles', () => {
+  it('does not throw when a quizTitle is null', () => {
+    const users = [{ quizzes: [row({ quizId: 'a', quizTitle: null }), row({ quizId: 'b', quizTitle: 'Alfa' })] }]
+    expect(byQuiz(users)).toHaveLength(2)
+  })
+})
+
 describe('byPunto', () => {
   it('returns [] for no users', () => {
     expect(byPunto([])).toEqual([])

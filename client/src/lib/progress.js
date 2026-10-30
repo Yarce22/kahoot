@@ -48,7 +48,7 @@ function group(items, keyOf) {
 }
 
 const byPercentThen = (name) => (a, b) =>
-  b.completionPercent - a.completionPercent || a[name].localeCompare(b[name])
+  b.completionPercent - a.completionPercent || (a[name] ?? '').localeCompare(b[name] ?? '')
 
 export function byQuiz(users) {
   const rows = users.flatMap((u) => u.quizzes)
