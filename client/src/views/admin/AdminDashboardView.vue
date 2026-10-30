@@ -8,29 +8,71 @@
     </div>
 
     <!-- Plain admins are pinned to their own store server-side; only a
-         superadmin can choose one. -->
-    <label v-if="auth.isSuperadmin" class="dash-filter">
-      Punto de venta
-      <select v-model="puntoDeVenta" @change="load">
-        <option value="">Todos</option>
-        <option v-for="p in PUNTOS_DE_VENTA" :key="p" :value="p">{{ p }}</option>
-      </select>
-    </label>
+         superadmin can choose one. Usuario/Examen narrow the loaded data
+         client-side. -->
+    <div class="dash-filters">
+      <label v-if="auth.isSuperadmin" class="dash-filter">
+        Punto de venta
+        <select v-model="puntoDeVenta" data-testid="filter-punto" @change="load">
+          <option value="">Todos</option>
+          <option v-for="p in PUNTOS_DE_VENTA" :key="p" :value="p">{{ p }}</option>
+        </select>
+      </label>
+      <label class="dash-filter">
+        Usuario
+        <select v-model="userId" data-testid="filter-user">
+          <option value="">Todos</option>
+          <option v-for="u in userOptions" :key="u.userId" :value="u.userId">{{ u.fullName }}</option>
+        </select>
+      </label>
+      <label class="dash-filter">
+        Examen
+        <select v-model="quizId" data-testid="filter-quiz">
+          <option value="">Todos</option>
+          <option v-for="q in quizOptions" :key="q.quizId" :value="q.quizId">{{ q.quizTitle }}</option>
+        </select>
+      </label>
+      <button v-if="filtersActive" class="btn btn-ghost" style="font-size: 14px; padding: 8px 16px;" data-testid="clear-filters" @click="clearFilters">
+        Limpiar filtros
+      </button>
+    </div>
 
     <p v-if="error" class="error-msg" role="alert">{{ error }}</p>
 
     <p v-if="loading" class="dash-muted">Cargando…</p>
 
     <template v-else-if="users">
-      <div class="card dash-summary">
-        <span>Usuarios: <strong data-testid="total-users">{{ users.length }}</strong></span>
-        <span>Completados: <strong data-testid="overall">{{ totals.completed }}/{{ totals.assigned }}</strong></span>
+      <div class="dash-kpis">
+        <div class="card kpi"><strong class="kpi-value" data-testid="total-users">{{ filteredUsers.length }}</strong><span class="kpi-label">Usuarios</span></div>
+        <div class="card kpi"><strong class="kpi-value" data-testid="kpi-assigned">{{ totals.assigned }}</strong><span class="kpi-label">Asignados</span></div>
+        <div class="card kpi"><strong class="kpi-value" data-testid="overall">{{ totals.completed }}/{{ totals.assigned }}</strong><span class="kpi-label">Completados</span></div>
+        <div class="card kpi"><strong class="kpi-value" data-testid="kpi-completion">{{ pct(totals.completionPercent) }}</strong><span class="kpi-label">Avance</span></div>
+        <div class="card kpi"><strong class="kpi-value" data-testid="kpi-average">{{ pct(totals.averageScore) }}</strong><span class="kpi-label">Promedio</span></div>
       </div>
 
-      <p v-if="!totals.assigned" class="dash-muted dash-empty">No hay exámenes asignados.</p>
+      <p v-if="!totals.assigned" class="dash-muted dash-empty">
+        {{ filtersActive ? 'Ningún resultado con estos filtros.' : 'No hay exámenes asignados.' }}
+      </p>
 
-      <ul v-else class="dash-list">
-        <li v-for="u in users" :key="u.userId" class="card dash-user">
+      <template v-else>
+        <div class="dash-charts">
+          <section class="card chart-card">
+            <h2 class="nunito chart-title">Estado de los exámenes</h2>
+            <StatusStackBar :counts="counts" />
+          </section>
+          <section class="card chart-card">
+            <h2 class="nunito chart-title">Avance por examen</h2>
+            <HBarChart title="Avance por examen" :items="quizItems" />
+          </section>
+          <section v-if="puntoItems.length > 1" class="card chart-card chart-wide">
+            <h2 class="nunito chart-title">Avance por punto de venta</h2>
+            <HBarChart title="Avance por punto de venta" :items="puntoItems" />
+          </section>
+        </div>
+
+        <h2 class="nunito chart-title dash-section">Usuarios</h2>
+      <ul class="dash-list">
+        <li v-for="u in filteredUsers" :key="u.userId" class="card dash-user">
           <div class="dash-user-head">
             <div class="dash-user-name">
               <strong>{{ u.fullName }}</strong>
@@ -72,6 +114,7 @@
           </ul>
         </li>
       </ul>
+      </template>
     </template>
   </div>
 </template>
@@ -81,7 +124,9 @@ import { computed, onMounted, ref } from 'vue'
 import { useAssignmentsStore } from '../../stores/assignments.js'
 import { useAuthStore } from '../../stores/auth.js'
 import { PUNTOS_DE_VENTA } from '../../lib/puntosDeVenta.js'
-import { pct, statusLabel } from '../../lib/progress.js'
+import { byPunto, byQuiz, pct, statusCounts, statusLabel, summarize } from '../../lib/progress.js'
+import StatusStackBar from '../../components/dashboard/StatusStackBar.vue'
+import HBarChart from '../../components/dashboard/HBarChart.vue'
 
 const store = useAssignmentsStore()
 const auth = useAuthStore()
@@ -92,13 +137,58 @@ const error = ref(null)
 const puntoDeVenta = ref('')
 const open = ref(new Set())
 
+const userId = ref('')
+const quizId = ref('')
+
+const filtersActive = computed(() => !!(userId.value || quizId.value))
+function clearFilters() {
+  userId.value = ''
+  quizId.value = ''
+}
+
+const userOptions = computed(() =>
+  [...(users.value ?? [])].sort((a, b) => a.fullName.localeCompare(b.fullName))
+)
+const quizOptions = computed(() => {
+  const map = new Map()
+  for (const u of users.value ?? []) for (const q of u.quizzes) map.set(q.quizId, q.quizTitle)
+  return [...map].map(([id, quizTitle]) => ({ quizId: id, quizTitle })).sort((a, b) => a.quizTitle.localeCompare(b.quizTitle))
+})
+
+// Usuario narrows the list; Examen narrows each usuario's quizzes and
+// recomputes their metrics, dropping usuarios left with none. Without an exam
+// filter the server's per-usuario metrics are kept as-is.
+const filteredUsers = computed(() => {
+  let list = users.value ?? []
+  if (userId.value) list = list.filter((u) => u.userId === userId.value)
+  if (!quizId.value) return list
+  return list
+    .map((u) => {
+      const quizzes = u.quizzes.filter((q) => q.quizId === quizId.value)
+      return { ...u, quizzes, ...summarize(quizzes) }
+    })
+    .filter((u) => u.quizzes.length)
+})
+
+const rows = computed(() => filteredUsers.value.flatMap((u) => u.quizzes))
+const counts = computed(() => statusCounts(rows.value))
 const totals = computed(() => {
-  const list = users.value ?? []
+  const assigned = filteredUsers.value.reduce((n, u) => n + u.assigned, 0)
+  const completed = filteredUsers.value.reduce((n, u) => n + u.completed, 0)
   return {
-    assigned: list.reduce((n, u) => n + u.assigned, 0),
-    completed: list.reduce((n, u) => n + u.completed, 0)
+    assigned,
+    completed,
+    completionPercent: assigned ? Math.round((completed / assigned) * 100) : 0,
+    averageScore: summarize(rows.value).averageScore
   }
 })
+const caption = (r) => `${r.completed}/${r.assigned} · prom. ${pct(r.averageScore)}`
+const quizItems = computed(() =>
+  byQuiz(filteredUsers.value).map((q) => ({ key: q.quizId, label: q.quizTitle, value: q.completionPercent, caption: caption(q) }))
+)
+const puntoItems = computed(() =>
+  byPunto(filteredUsers.value).map((p) => ({ key: p.puntoDeVenta, label: p.puntoDeVenta, value: p.completionPercent, caption: caption(p) }))
+)
 
 const isOpen = (id) => open.value.has(id)
 function toggle(id) {
@@ -119,6 +209,9 @@ async function load() {
     const res = await store.fetchProgress({ punto_de_venta: puntoDeVenta.value })
     if (id !== latestRequest) return
     users.value = res.users
+    // Drop selections that no longer exist in the reloaded data.
+    if (!res.users.some((u) => u.userId === userId.value)) userId.value = ''
+    if (!quizOptions.value.some((q) => q.quizId === quizId.value)) quizId.value = ''
   } catch (e) {
     if (id !== latestRequest) return
     users.value = null
@@ -137,8 +230,22 @@ onMounted(load)
 .dash-title { font-weight: 900; font-size: 28px; color: var(--text-primary); }
 .dash-muted { color: var(--text-secondary); font-family: 'Nunito', sans-serif; font-weight: 700; }
 .dash-empty { text-align: center; margin-top: 40px; }
-.dash-filter { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; font-family: 'Nunito', sans-serif; font-weight: 700; color: var(--text-primary); }
-.dash-summary { display: flex; gap: 28px; flex-wrap: wrap; padding: 18px 24px; margin-bottom: 24px; font-family: 'Nunito', sans-serif; color: var(--text-primary); }
+.dash-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 20px; margin-bottom: 24px; }
+.dash-filter { display: flex; flex-direction: column; gap: 4px; min-width: 160px; font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 13px; color: var(--text-secondary); }
+.dash-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.kpi { display: flex; flex-direction: column; gap: 2px; padding: 16px 18px; font-family: 'Nunito', sans-serif; }
+.kpi-value { font-size: 28px; font-weight: 900; color: var(--text-primary); }
+.kpi-label { font-size: 13px; font-weight: 700; color: var(--text-secondary); }
+.dash-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 28px; }
+.chart-card { padding: 18px 20px; min-width: 0; }
+.chart-wide { grid-column: 1 / -1; }
+.chart-title { font-weight: 800; font-size: 16px; color: var(--text-primary); margin-bottom: 14px; }
+.dash-section { margin-bottom: 12px; }
+@media (max-width: 720px) {
+  .admin-dashboard-view { padding: 24px 16px 32px; }
+  .dash-charts { grid-template-columns: minmax(0, 1fr); }
+  .dash-filter { flex: 1 1 100%; }
+}
 .dash-list { list-style: none; padding: 0; display: grid; gap: 12px; }
 .dash-user { padding: 16px 20px; font-family: 'Nunito', sans-serif; color: var(--text-primary); }
 /* Fixed metric columns keep the bars aligned across rows, whatever the name or
