@@ -8,7 +8,7 @@
           ← Mis quizzes
         </router-link>
         <h1 class="nunito" style="font-weight: 900; font-size: 24px; color: var(--text-primary);">
-          Historial de sesiones
+          Historial
         </h1>
       </div>
     </div>

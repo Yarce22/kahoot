@@ -97,6 +97,14 @@ describe('UserLoginView', () => {
     const link = wrapper.findAll('a').find((a) => a.text().includes('Olvidaste tu contraseña'))
     expect(link.attributes('href')).toBe('/user/forgot-password')
   })
+  it('does not link to the live PIN join screen', () => {
+    const wrapper = mount(UserLoginView, {
+      global: { plugins: [createPinia()], components: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } } }
+    })
+    expect(wrapper.find('a[href="/join"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('PIN')
+    expect(wrapper.find('a[href="/admin/login"]').exists()).toBe(true)
+  })
 
   it('shows the reset-success notice only when redirected with ?reset=success', () => {
     expect(mountView().find('.success-msg').exists()).toBe(false)

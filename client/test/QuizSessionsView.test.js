@@ -40,6 +40,7 @@ describe('QuizSessionsView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('Ana')
+    expect(wrapper.find('h1').text()).toBe('Historial')
     expect(wrapper.text()).not.toContain('Sesiones en vivo')
     expect(wrapper.text()).not.toContain('PIN')
     expect(get.mock.calls.some(([url]) => url.includes('/sessions'))).toBe(false)
