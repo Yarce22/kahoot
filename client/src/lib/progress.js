@@ -71,7 +71,9 @@ export const STATUS_COLORS = { Completado: '#56633f', 'En progreso': '#d67f48', 
 export const scoreColor = (s) => (s == null ? '#a69d8e' : s >= 80 ? '#56633f' : s >= 60 ? '#7a8a5e' : s >= 40 ? '#d67f48' : '#8c491a')
 
 const DAY = 864e5
-export const daysAgo = (iso, now = new Date()) => Math.floor((now - new Date(iso)) / DAY)
+// Local calendar days between the dates; round() absorbs DST hour shifts.
+const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
+export const daysAgo = (iso, now = new Date()) => Math.round((startOfDay(now) - startOfDay(new Date(iso))) / DAY)
 
 export function relDate(iso, now = new Date()) {
   if (!iso) return '—'

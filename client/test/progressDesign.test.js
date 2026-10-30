@@ -21,6 +21,11 @@ describe('dashboard design helpers', () => {
     expect(daysAgo(ago(9), NOW)).toBe(9)
   })
 
+  it('daysAgo counts calendar days, not elapsed 24h blocks', () => {
+    expect(relDate(new Date('2026-10-29T20:00:00').toISOString(), NOW)).toBe('Ayer')
+    expect(relDate(new Date('2026-10-30T00:30:00').toISOString(), NOW)).toBe('Hoy')
+  })
+
   it('scoreBuckets counts scores into five bands', () => {
     expect(scoreBuckets([10, 39, 40, 85, 100, 90]).map((b) => b.n)).toEqual([2, 1, 0, 1, 2])
   })
