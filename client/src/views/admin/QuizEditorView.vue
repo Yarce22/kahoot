@@ -46,6 +46,13 @@
             Entre 1 y 120 minutos. Vacío = el cuestionario no puede asignarse (solo partidas en vivo).
           </p>
         </div>
+        <div class="field-group">
+          <label class="field-label-sm" for="quiz-due-at">Fecha límite</label>
+          <input id="quiz-due-at" v-model="form.due_at" class="input-sm" type="datetime-local" />
+          <p style="color: var(--text-muted); font-size: 12px; font-family: 'Nunito', sans-serif; margin: 0;">
+            Opcional. Después de esta fecha el examen queda vencido.
+          </p>
+        </div>
         <div style="grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
           <button type="submit" class="btn btn-primary btn-sm" :disabled="saving">
             {{ saving ? 'Guardando…' : 'Guardar cuestionario' }}
@@ -309,7 +316,14 @@ const quizId = ref(route.params.id || null)
 // isNew would stay true and create a duplicate on the next save.
 const isNew = computed(() => !quizId.value)
 
-const form = ref({ title: '', description: '', total_time_minutes: '' })
+const form = ref({ title: '', description: '', total_time_minutes: '', due_at: '' })
+
+// ISO (UTC) -> the local `YYYY-MM-DDTHH:mm` a datetime-local input expects.
+function toLocalInput(iso) {
+  const d = new Date(iso)
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+}
 const saving = ref(false)
 const quizError = ref('')
 
@@ -341,6 +355,7 @@ onMounted(async () => {
       form.value.total_time_minutes = store.activeQuiz.total_time_seconds != null
         ? Math.round(store.activeQuiz.total_time_seconds / 60)
         : ''
+      form.value.due_at = store.activeQuiz.due_at ? toLocalInput(store.activeQuiz.due_at) : ''
       questions.value = store.activeQuiz.questions || []
     }
   }
@@ -356,9 +371,10 @@ async function saveQuiz() {
     // who leaves the field blank must get "no timer" (null), not an error.
     // total_time_minutes itself is dropped from the payload — the server has
     // no use for it and only expects total_time_seconds.
-    const { total_time_minutes, ...rest } = form.value
+    const { total_time_minutes, due_at, ...rest } = form.value
     const payload = {
       ...rest,
+      due_at: due_at ? new Date(due_at).toISOString() : null,
       total_time_seconds: total_time_minutes === '' ? null : total_time_minutes * 60
     }
     if (isNew.value) {

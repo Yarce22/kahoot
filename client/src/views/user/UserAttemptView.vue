@@ -181,7 +181,7 @@ onMounted(async () => {
     remainingSeconds.value = computeRemaining()
     timerHandle = setInterval(tick, 1000)
   } catch (e) {
-    loadError.value = e.message
+    loadError.value = e.message === 'QUIZ_PAST_DUE' ? 'La fecha límite de este examen ya pasó.' : e.message
   }
 })
 

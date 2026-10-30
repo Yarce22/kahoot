@@ -139,6 +139,14 @@ describe('UserAttemptView', () => {
     expect(wrapper.find('a[href="/user/quizzes"]').exists()).toBe(true)
   })
 
+  it('shows a Spanish message when starting a past-due quiz (QUIZ_PAST_DUE)', async () => {
+    post.mockRejectedValueOnce(new Error('QUIZ_PAST_DUE'))
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').text()).toBe('La fecha límite de este examen ya pasó.')
+  })
+
   it('freezes answering and shows a banner on an ATTEMPT_EXPIRED answer error', async () => {
     post.mockResolvedValueOnce(startAttemptResponse())
     const wrapper = mountView()
