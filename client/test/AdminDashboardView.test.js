@@ -62,9 +62,9 @@ describe('AdminDashboardView', () => {
     get.mockResolvedValue({ users: [user()] })
     const w = mountAs()
     await flushPromises()
-    const row = w.find('.dash-user-head')
-    expect(row.find('[data-testid="completion-u1"]').text()).toBe('Avance 25%')
-    expect(row.find('[data-testid="average-u1"]').text()).toBe('Promedio 80%')
+    const row = w.find('.dash-user')
+    expect(row.find('[data-testid="completion-u1"]').text()).toBe('25%')
+    expect(row.find('[data-testid="average-u1"]').text()).toBe('80%')
   })
 
   it('shows a dash when the average score is null', async () => {
@@ -213,7 +213,7 @@ describe('AdminDashboardView', () => {
       await w.find('[data-testid="filter-quiz"]').setValue('q2')
       expect(w.find('[data-testid="total-users"]').text()).toBe('1')
       expect(w.find('[data-testid="overall"]').text()).toBe('0/1')
-      expect(w.find('[data-testid="completion-u1"]').text()).toBe('Avance 0%')
+      expect(w.find('[data-testid="completion-u1"]').text()).toBe('0%')
       expect(w.find('[data-testid="avg-u1"]').text()).toBe('—')
       expect(rowsText(w).join()).not.toContain('Beto')
     })
@@ -283,11 +283,38 @@ describe('AdminDashboardView', () => {
       }
     })
 
+    it('filters by estado client-side and counts it as an active filter', async () => {
+      const w = await ready()
+      await w.find('[data-testid="filter-status"]').setValue('Pendiente')
+      expect(w.find('[data-testid="filter-count"]').text()).toBe('1')
+      expect(w.find('[data-testid="overall"]').text()).toBe('0/1')
+      expect(rowsText(w)).toHaveLength(1)
+      await w.find('[data-testid="clear-filters"]').trigger('click')
+      expect(w.find('[data-testid="filter-status"]').element.value).toBe('')
+    })
+
+    it('buckets graded scores in the histogram', async () => {
+      const w = await ready()
+      expect(w.find('[data-testid="histo-60–79"]').text()).toBe('1')
+      expect(w.find('[data-testid="histo-80–89"]').text()).toBe('1')
+    })
+
+    it('flags usuarios that need attention', async () => {
+      const w = await ready('admin', { users: [withRows('u3', 'Caro', 'Cerritos', [done('c1', 'q1', 'Seguridad', 40), todo('c2', 'q2', 'Higiene')])] })
+      expect(w.find('[data-testid="attn-u3"]').text()).toContain('promedio 40%')
+    })
+
+    it('links a completed attempt to its admin result', async () => {
+      const w = await ready('admin', { users: [withRows('u1', 'Ana', 'Cerritos', [{ ...done('a1', 'q1', 'Seguridad', 80), attemptId: 'att-9' }])] })
+      await w.find('[data-testid="toggle-u1"]').trigger('click')
+      expect(w.find('a[href="/admin/quizzes/q1/attempts/att-9"]').text()).toContain('Ver intento')
+    })
+
     it('renders the status chart and per-exam bars', async () => {
       const w = await ready()
       expect(w.text()).toContain('Estado de los exámenes')
       expect(w.text()).toContain('Avance por examen')
-      expect(w.text()).toContain('2/2 · prom. 70%')
+      expect(w.text()).toContain('2/2 completados · 0 vencidos')
     })
   })
 })
