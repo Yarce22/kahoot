@@ -63,6 +63,17 @@ describe('QuizListView — nav link', () => {
     expect(wrapper.find('.btn-host').exists()).toBe(false)
   })
 
+  it('logs the admin out and goes back to the admin login', async () => {
+    const wrapper = mountAs('admin')
+    await flushPromises()
+
+    await wrapper.findAll('button').find((b) => b.text() === 'Cerrar sesión').trigger('click')
+
+    expect(useAuthStore().isLoggedIn).toBe(false)
+    expect(localStorage.length).toBe(0)
+    expect(push).toHaveBeenCalledWith('/admin/login')
+  })
+
   it('shows the Dashboard link to the progress dashboard', async () => {
     const wrapper = mountAs('admin')
     await flushPromises()

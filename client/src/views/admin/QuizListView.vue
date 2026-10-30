@@ -15,6 +15,9 @@
         <router-link v-if="auth.isSuperadmin" to="/admin/admins" class="btn btn-primary" style="font-size: 14px; padding: 8px 16px;">
           👥 Administradores
         </router-link>
+        <button class="btn btn-ghost" style="font-size: 14px; padding: 8px 16px;" @click="logout">
+          Cerrar sesión
+        </button>
       </div>
     </div>
 
@@ -216,6 +219,11 @@ const store = useQuizStore()
 const auth = useAuthStore()
 const usersStore = useUsersStore()
 const assignmentsStore = useAssignmentsStore()
+
+function logout() {
+  auth.logout()
+  router.push('/admin/login')
+}
 
 
 const reactivatingQuiz = ref(null)
